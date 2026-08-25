@@ -5,7 +5,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
-import React, { StrictMode, useEffect, lazy, Suspense } from "react";
+import React, { StrictMode, Suspense, lazy, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "./index.css";
@@ -22,8 +22,6 @@ const ScholarshipNavigator = lazy(() => import("./pages/ScholarshipNavigator.tsx
 const Notifications = lazy(() => import("./pages/Notifications.tsx"));
 const Profile = lazy(() => import("./pages/Profile.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-
-// Authenticated layout
 const AppLayout = lazy(() => import("./components/AppLayout.tsx"));
 
 function RouteLoading() {
@@ -112,24 +110,17 @@ function RouteSyncer() {
   return null;
 }
 
-function AuthenticatedRoutes() {
+// Wrapper that adds AppLayout around authenticated pages
+function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
-      <AppLayout>
-        <Suspense fallback={<RouteLoading />}>
-          <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/discover" element={<CollegeDiscovery />} />
-            <Route path="/shortlist" element={<Shortlist />} />
-            <Route path="/applications" element={<Applications />} />
-            <Route path="/deadlines" element={<Deadlines />} />
-            <Route path="/scholarships" element={<ScholarshipNavigator />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </AppLayout>
+      <Suspense fallback={<RouteLoading />}>
+        <AppLayout>
+          <Suspense fallback={<RouteLoading />}>
+            {children}
+          </Suspense>
+        </AppLayout>
+      </Suspense>
     </RequireAuth>
   );
 }
@@ -151,7 +142,71 @@ createRoot(document.getElementById("root")!).render(
                   path="/auth"
                   element={<AuthPage redirectAfterAuth="/dashboard" />}
                 />
-                <Route path="/*" element={<AuthenticatedRoutes />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <AuthenticatedLayout>
+                      <Dashboard />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/discover"
+                  element={
+                    <AuthenticatedLayout>
+                      <CollegeDiscovery />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/shortlist"
+                  element={
+                    <AuthenticatedLayout>
+                      <Shortlist />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/applications"
+                  element={
+                    <AuthenticatedLayout>
+                      <Applications />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/deadlines"
+                  element={
+                    <AuthenticatedLayout>
+                      <Deadlines />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/scholarships"
+                  element={
+                    <AuthenticatedLayout>
+                      <ScholarshipNavigator />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/notifications"
+                  element={
+                    <AuthenticatedLayout>
+                      <Notifications />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <AuthenticatedLayout>
+                      <Profile />
+                    </AuthenticatedLayout>
+                  }
+                />
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
           </BrowserRouter>
