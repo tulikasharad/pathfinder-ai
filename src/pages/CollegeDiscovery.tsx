@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -32,6 +34,56 @@ const fadeUp = {
   hidden: { opacity: 0, y: 12 },
   show: { opacity: 1, y: 0 },
 };
+
+/** Parse a fee string like "₹2.2L" into a numeric value for comparison. */
+function parseFee(feeStr: string | null): number {
+  if (!feeStr) return 0;
+  const cleaned = feeStr.replace(/[₹,\s]/g, "").toLowerCase();
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return 0;
+  if (cleaned.includes("l")) return num * 100000;
+  if (cleaned.includes("k")) return num * 1000;
+  if (cleaned.includes("cr")) return num * 10000000;
+  return num;
+}
+
+interface AdvancedFilters {
+  scholarshipAvailable: boolean;
+  verifiedOnly: boolean;
+  entranceExams: string[];
+  courses: string[];
+  maxFee: string; // "any", "1L", "2L", "3L", "5L", "10L"
+}
+
+const EMPTY_FILTERS: AdvancedFilters = {
+  scholarshipAvailable: false,
+  verifiedOnly: false,
+  entranceExams: [],
+  courses: [],
+  maxFee: "any",
+};
+
+const FEE_OPTIONS = [
+  { value: "any", label: "Any budget" },
+  { value: "1L", label: "Under ₹1 Lakh/year" },
+  { value: "2L", label: "Under ₹2 Lakh/year" },
+  { value: "3L", label: "Under ₹3 Lakh/year" },
+  { value: "5L", label: "Under ₹5 Lakh/year" },
+  { value: "10L", label: "Under ₹10 Lakh/year" },
+];
+
+const MAX_FEE_MAP: Record<string, number> = {
+  "1L": 100000,
+  "2L": 200000,
+  "3L": 300000,
+  "5L": 500000,
+  "10L": 1000000,
+};
+
+const COMMON_EXAMS = ["JEE Main", "BITSAT", "VITEEE", "SRMJEEE", "MHT-CET", "COMEDK"];
+const COMMON_COURSES = ["B.Tech CSE", "B.Tech ECE", "B.Tech ME", "B.E. CSE", "BCA", "B.Sc"];
+
+// ── Data fetchers ────────────────────────────────────────────────────────────
 
 async function fetchColleges() {
   const { data } = await supabase.from("colleges").select("*");
@@ -91,26 +143,42 @@ async function toggleBookmarkOp(args: { userId: string; itemType: string; itemId
   return { bookmarked: true };
 }
 
+// ── Component ────────────────────────────────────────────────────────────────
+
 export default function CollegeDiscovery() {
   const { user } = useAuth();
   const colleges = useQuery(fetchColleges);
   const bookmarks = useQuery(fetchBookmarks, { userId: user?._id });
   const toggleBookmark = useMutation(toggleBookmarkOp);
 
+  // Basic filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterState, setFilterState] = useState("all");
   const [sortBy, setSortBy] = useState("ranking");
   const [selectedCollege, setSelectedCollege] = useState<any>(null);
 
-  const shortlistedIds = useMemo(
-    () => new Set(bookmarks?.map((b) => b.itemId) || []),
-    [bookmarks]
-  );
+  // Advanced filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [adv, setAdv] = useState<AdvancedFilters>({ ...EMPTY_FILTERS });
+
+  const hasActiveFilters =
+    adv.scholarshipAvailable ||
+    adv.verifiedOnly ||
+    adv.entranceExams.length > 0 ||
+    adv.courses.length > 0 ||
+    adv.maxFee !== "any";
+
+  const clearAdvancedFilters = useCallback(() => {
+    setAdv({ ...EMPTY_FILTERS });
+  }, []);
+
+  // ── Filter logic ─────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
     if (!colleges) return [];
     let results = [...colleges];
 
+    // Text search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       results = results.filter(
@@ -121,10 +189,46 @@ export default function CollegeDiscovery() {
       );
     }
 
+    // State filter
     if (filterState !== "all") {
       results = results.filter((c) => c.state === filterState);
     }
 
+    // Advanced: Max fee
+    if (adv.maxFee !== "any") {
+      const maxFeeValue = MAX_FEE_MAP[adv.maxFee];
+      if (maxFeeValue) {
+        results = results.filter((c) => parseFee(c.fees) <= maxFeeValue && parseFee(c.fees) > 0);
+      }
+    }
+
+    // Advanced: Scholarship available
+    if (adv.scholarshipAvailable) {
+      results = results.filter((c) => c.scholarshipsAvailable.length > 0);
+    }
+
+    // Advanced: Verified only
+    if (adv.verifiedOnly) {
+      results = results.filter((c) => c.isVerified);
+    }
+
+    // Advanced: Entrance exams (show colleges that match ANY selected exam)
+    if (adv.entranceExams.length > 0) {
+      const lower = adv.entranceExams.map((e) => e.toLowerCase());
+      results = results.filter((c) =>
+        c.entranceExams.some((e: string) => lower.includes(e.toLowerCase()))
+      );
+    }
+
+    // Advanced: Courses (show colleges that match ANY selected course)
+    if (adv.courses.length > 0) {
+      const lower = adv.courses.map((c) => c.toLowerCase());
+      results = results.filter((c) =>
+        c.courses.some((cr: string) => lower.includes(cr.toLowerCase()))
+      );
+    }
+
+    // Sort
     if (sortBy === "ranking") {
       results.sort((a, b) => (a.ranking || 99) - (b.ranking || 99));
     } else if (sortBy === "name") {
@@ -132,7 +236,14 @@ export default function CollegeDiscovery() {
     }
 
     return results;
-  }, [colleges, searchQuery, filterState, sortBy]);
+  }, [colleges, searchQuery, filterState, sortBy, adv]);
+
+  const shortlistedIds = useMemo(
+    () => new Set(bookmarks?.map((b) => b.itemId) || []),
+    [bookmarks]
+  );
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   const handleToggleBookmark = useCallback(
     async (id: string) => {
@@ -151,6 +262,32 @@ export default function CollegeDiscovery() {
     return [...new Set(colleges.map((c) => c.state))].sort();
   }, [colleges]);
 
+  // Collect all unique exams and courses from the data for filter options
+  const allExams = useMemo(() => {
+    if (!colleges) return COMMON_EXAMS;
+    const found = new Set<string>();
+    colleges.forEach((c) => c.entranceExams.forEach((e: string) => found.add(e)));
+    COMMON_EXAMS.forEach((e) => found.add(e));
+    return [...found].sort();
+  }, [colleges]);
+
+  const allCourses = useMemo(() => {
+    if (!colleges) return COMMON_COURSES;
+    const found = new Set<string>();
+    colleges.forEach((c) => c.courses.forEach((cr: string) => found.add(cr)));
+    COMMON_COURSES.forEach((c) => found.add(c));
+    return [...found].sort();
+  }, [colleges]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  const activeFilterCount =
+    (adv.scholarshipAvailable ? 1 : 0) +
+    (adv.verifiedOnly ? 1 : 0) +
+    adv.entranceExams.length +
+    adv.courses.length +
+    (adv.maxFee !== "any" ? 1 : 0);
+
   return (
     <div className="p-6 md:p-8">
       <motion.div
@@ -166,6 +303,7 @@ export default function CollegeDiscovery() {
           </p>
         </div>
 
+        {/* ── Search bar + filters ─────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -187,12 +325,161 @@ export default function CollegeDiscovery() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 relative"
+            onClick={() => setShowFilters((prev) => !prev)}
+          >
             <Filter className="size-3.5" />
             More filters
+            {activeFilterCount > 0 && (
+              <Badge className="ml-1 size-5 p-0 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px]">
+                {activeFilterCount}
+              </Badge>
+            )}
           </Button>
         </div>
 
+        {/* ── Advanced filter panel ────────────────────────────────────── */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="rounded-xl border border-border/60 bg-card p-5 space-y-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Advanced Filters</h3>
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground"
+                      onClick={clearAdvancedFilters}
+                    >
+                      <X className="mr-1 size-3" />
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {/* Max annual fee */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+                      Annual Fee
+                    </Label>
+                    <Select value={adv.maxFee} onValueChange={(v) => setAdv((p) => ({ ...p, maxFee: v }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Any budget" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FEE_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Entrance Exams */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+                      Entrance Exam
+                    </Label>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {allExams.map((exam) => {
+                        const selected = adv.entranceExams.includes(exam);
+                        return (
+                          <Badge
+                            key={exam}
+                            variant={selected ? "default" : "outline"}
+                            className="cursor-pointer text-[11px] select-none"
+                            onClick={() => {
+                              setAdv((p) => ({
+                                ...p,
+                                entranceExams: selected
+                                  ? p.entranceExams.filter((e) => e !== exam)
+                                  : [...p.entranceExams, exam],
+                              }));
+                            }}
+                          >
+                            {exam}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Courses / Branch */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+                      Course / Branch
+                    </Label>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {allCourses.map((course) => {
+                        const selected = adv.courses.includes(course);
+                        return (
+                          <Badge
+                            key={course}
+                            variant={selected ? "default" : "outline"}
+                            className="cursor-pointer text-[11px] select-none"
+                            onClick={() => {
+                              setAdv((p) => ({
+                                ...p,
+                                courses: selected
+                                  ? p.courses.filter((c) => c !== course)
+                                  : [...p.courses, course],
+                              }));
+                            }}
+                          >
+                            {course}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Checkbox row */}
+                <div className="flex flex-wrap items-center gap-6 border-t pt-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={adv.scholarshipAvailable}
+                      onCheckedChange={(checked) =>
+                        setAdv((p) => ({ ...p, scholarshipAvailable: !!checked }))
+                      }
+                    />
+                    Scholarship available
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={adv.verifiedOnly}
+                      onCheckedChange={(checked) =>
+                        setAdv((p) => ({ ...p, verifiedOnly: !!checked }))
+                      }
+                    />
+                    Officially verified only
+                  </label>
+                </div>
+
+                {/* Apply / Close */}
+                <div className="flex items-center justify-between border-t pt-4">
+                  <p className="text-xs text-muted-foreground">
+                    Showing {filtered.length} matching {filtered.length === 1 ? "college" : "colleges"}
+                  </p>
+                  <Button size="sm" onClick={() => setShowFilters(false)}>
+                    Apply Filters
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Profile summary bar ──────────────────────────────────────── */}
         <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="text-primary">👤</span> Based on your profile:
@@ -207,6 +494,7 @@ export default function CollegeDiscovery() {
 
         <h2 className="text-lg font-bold">Colleges for your path</h2>
 
+        {/* ── College cards ────────────────────────────────────────────── */}
         <div className="space-y-4">
           {filtered.map((college, idx) => {
             const isShortlisted = shortlistedIds.has(college._id);
@@ -318,9 +606,20 @@ export default function CollegeDiscovery() {
             <GraduationCap className="mx-auto size-12 text-muted-foreground/30" />
             <p className="mt-4 text-sm font-medium text-muted-foreground">No colleges found</p>
             <p className="mt-1 text-xs text-muted-foreground/70">Try adjusting your search or filters</p>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={clearAdvancedFilters}
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
         )}
 
+        {/* ── College detail modal ─────────────────────────────────────── */}
         <AnimatePresence>
           {selectedCollege && (
             <motion.div
