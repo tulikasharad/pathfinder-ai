@@ -2,20 +2,10 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,28 +18,36 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  FileText,
-  Clock,
-  CheckCircle2,
-  XCircle,
   Search,
-  Filter,
-  MoreHorizontal,
+  CheckCircle2,
   Trash2,
-  ExternalLink,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  interested: { label: "Interested", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", icon: Clock },
-  preparing: { label: "Preparing Docs", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: FileText },
-  started: { label: "Started", color: "bg-violet-500/10 text-violet-600 dark:text-violet-400", icon: FileText },
-  applied: { label: "Applied", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
-  selected: { label: "Selected", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
-  not_selected: { label: "Not Selected", color: "bg-red-500/10 text-red-600 dark:text-red-400", icon: XCircle },
-};
+const APP_STEPS = ["Eligibility", "Application", "Payment", "Exam", "Result", "Counselling", "Admission"];
 
-const STATUS_FLOW = ["interested", "preparing", "started", "applied", "selected"];
+const DEMO_APPLICATIONS = [
+  {
+    _id: "demo1",
+    name: "Northstar Institute of Technology",
+    course: "B.Tech CSE",
+    applicationId: "NIT2026CS001247",
+    phase: "Phase 1",
+    status: "started",
+    deadline: "30 Aug 2026",
+    completedSteps: 2,
+  },
+  {
+    _id: "demo2",
+    name: "VIT University Vellore",
+    course: "B.Tech CSE (AI & ML)",
+    applicationId: "VITEEE2026AI004512",
+    phase: "Phase 1",
+    status: "started",
+    deadline: "25 Aug 2026",
+    completedSteps: 3,
+  },
+];
 
 export default function Applications() {
   const { user } = useAuth();
@@ -61,52 +59,42 @@ export default function Applications() {
   const deleteApp = useMutation(api.scholarships.deleteApplication);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [editingNotes, setEditingNotes] = useState<string | null>(null);
-  const [notesText, setNotesText] = useState("");
 
-  const filtered = useMemo(() => {
-    if (!applications) return [];
-    let results = [...applications];
-
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      results = results.filter((a) => a.name.toLowerCase().includes(q));
+  // Merge real data with demo data if no real apps
+  const displayApps = useMemo(() => {
+    if (applications && applications.length > 0) {
+      return applications.map((a) => ({
+        _id: a._id,
+        name: a.name,
+        completedSteps:
+          a.status === "applied"
+            ? 5
+            : a.status === "started"
+            ? 3
+            : a.status === "preparing"
+            ? 2
+            : a.status === "interested"
+            ? 1
+            : 0,
+        applicationId: "—",
+        course: "—",
+        phase: "Phase 1",
+        status: a.status,
+        deadline: a.deadline,
+      }));
     }
-
-    if (filterStatus !== "all") {
-      results = results.filter((a) => a.status === filterStatus);
-    }
-
-    return results;
-  }, [applications, searchQuery, filterStatus]);
-
-  const stats = useMemo(() => {
-    if (!applications) return { total: 0, byStatus: {} };
-    const byStatus: Record<string, number> = {};
-    for (const a of applications) {
-      byStatus[a.status] = (byStatus[a.status] || 0) + 1;
-    }
-    return { total: applications.length, byStatus };
+    return DEMO_APPLICATIONS;
   }, [applications]);
 
-  const handleAdvanceStatus = useCallback(
-    async (app: any) => {
-      const currentIdx = STATUS_FLOW.indexOf(app.status);
-      if (currentIdx >= 0 && currentIdx < STATUS_FLOW.length - 1) {
-        const nextStatus = STATUS_FLOW[currentIdx + 1];
-        await updateApp({ id: app._id, status: nextStatus });
-      }
-    },
-    [updateApp]
-  );
-
-  const handleDelete = useCallback(
-    async (id: string) => {
-      await deleteApp({ id: id as any });
-    },
-    [deleteApp]
-  );
+  const filtered = useMemo(() => {
+    if (!searchQuery) return displayApps;
+    const q = searchQuery.toLowerCase();
+    return displayApps.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        (a.course && a.course.toLowerCase().includes(q))
+    );
+  }, [displayApps, searchQuery]);
 
   return (
     <div className="p-6 md:p-8">
@@ -115,72 +103,30 @@ export default function Applications() {
         animate={{ opacity: 1, y: 0 }}
         className="mx-auto max-w-6xl space-y-6"
       >
+        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            Applications
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Applications</h1>
           <p className="mt-1 text-muted-foreground">
-            Track all your scholarship and college applications
+            Track and manage your college applications.
           </p>
         </div>
 
-        {/* Stats */}
-        <div className="grid gap-3 grid-cols-3 sm:grid-cols-6">
-          {STATUS_FLOW.map((status) => {
-            const config = STATUS_CONFIG[status];
-            return (
-              <Card
-                key={status}
-                className={`border-border/60 cursor-pointer transition-all hover:border-primary/30 ${
-                  filterStatus === status ? "border-primary/40 ring-1 ring-primary/20" : ""
-                }`}
-                onClick={() =>
-                  setFilterStatus(filterStatus === status ? "all" : status)
-                }
-              >
-                <CardContent className="p-3 text-center">
-                  <p className="text-xl font-bold">{stats.byStatus[status] || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">{config.label}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
+        {/* Search */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search applications..."
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
 
-        {/* Search & Filter */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search applications..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          {filterStatus !== "all" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFilterStatus("all")}
-            >
-              Clear filter
-              <XCircle className="ml-1.5 size-3" />
-            </Button>
-          )}
-        </div>
-
-        {/* Application List */}
-        <div className="space-y-3">
+        {/* Application Cards */}
+        <div className="space-y-4">
           {filtered.map((app, idx) => {
-            const config = STATUS_CONFIG[app.status] || STATUS_CONFIG.interested;
-            const Icon = config.icon;
-            const daysUntil = Math.ceil(
-              (new Date(app.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-            );
-            const currentIdx = STATUS_FLOW.indexOf(app.status);
-            const canAdvance =
-              currentIdx >= 0 && currentIdx < STATUS_FLOW.length - 1;
+            const completedSteps =
+              typeof app.completedSteps === "number" ? app.completedSteps : 0;
 
             return (
               <motion.div
@@ -189,80 +135,77 @@ export default function Applications() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
               >
-                <Card className="border-border/60 transition-all hover:border-primary/20">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${config.color}`}>
-                          <Icon className="size-4" />
+                <Card className="border-border/60">
+                  <CardContent className="p-5">
+                    {/* Top Row */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-primary/15 text-primary border-0 text-[10px]">
+                            In Progress
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{app.phase}</span>
                         </div>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-semibold">{app.name}</h3>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Badge variant="outline" className="text-[10px] capitalize">
-                              {app.type}
-                            </Badge>
-                            <span>Due {app.deadline}</span>
-                            {daysUntil <= 7 && daysUntil > 0 && (
-                              <span className="text-amber-500 font-medium">
-                                {daysUntil}d left
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                        <h3 className="mt-2 text-lg font-bold">{app.name}</h3>
+                        <p className="text-sm text-muted-foreground">{app.course}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                          {app.applicationId}
+                        </p>
                       </div>
-
-                      <div className="flex items-center gap-2">
-                        <Badge className={`text-[10px] ${config.color}`}>
-                          {config.label}
-                        </Badge>
-
-                        {canAdvance && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => handleAdvanceStatus(app)}
-                          >
-                            Advance →
-                          </Button>
-                        )}
-
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-destructive">
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Remove Application?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will remove "{app.name}" from your tracker. This cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDelete(app._id)}>
-                                Remove
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                      <div className="text-right">
+                        <p className="text-3xl font-bold text-primary">
+                          {completedSteps}<span className="text-lg text-muted-foreground">/7</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">steps done</p>
+                        <p className="mt-1 text-sm font-medium text-amber-500">
+                          Due: {app.deadline}
+                        </p>
                       </div>
                     </div>
 
-                    {/* Status progress bar */}
-                    <div className="mt-3 flex items-center gap-1">
-                      {STATUS_FLOW.map((status, i) => (
-                        <div key={status} className="flex-1">
-                          <div
-                            className={`h-1.5 rounded-full ${
-                              i <= currentIdx ? "bg-primary" : "bg-muted"
-                            }`}
-                          />
-                        </div>
-                      ))}
+                    {/* Step Tracker */}
+                    <div className="mt-5">
+                      <div className="flex items-center justify-between">
+                        {APP_STEPS.map((step, i) => {
+                          const isCompleted = i < completedSteps;
+                          const isCurrent = i === completedSteps;
+                          return (
+                            <div key={step} className="flex flex-1 items-center">
+                              <div className="flex flex-col items-center">
+                                <div
+                                  className={`flex size-8 items-center justify-center rounded-full border-2 transition-all ${
+                                    isCompleted
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : isCurrent
+                                      ? "border-primary/50 bg-primary/10 text-primary"
+                                      : "border-muted-foreground/20 bg-transparent text-muted-foreground/40"
+                                  }`}
+                                >
+                                  {isCompleted ? (
+                                    <CheckCircle2 className="size-4" />
+                                  ) : (
+                                    <span className="text-[10px] font-medium">{i + 1}</span>
+                                  )}
+                                </div>
+                                <p className={`mt-1.5 text-[10px] font-medium ${
+                                  isCompleted ? "text-foreground" : "text-muted-foreground"
+                                }`}>
+                                  {step}
+                                </p>
+                              </div>
+                              {i < APP_STEPS.length - 1 && (
+                                <div className="mx-1 mt-[-20px] h-[2px] flex-1">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      i < completedSteps ? "bg-primary" : "bg-muted-foreground/20"
+                                    }`}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -273,16 +216,13 @@ export default function Applications() {
 
         {filtered.length === 0 && (
           <div className="rounded-xl border border-dashed p-12 text-center">
-            <FileText className="mx-auto size-12 text-muted-foreground/30" />
+            <Search className="mx-auto size-12 text-muted-foreground/30" />
             <p className="mt-4 text-sm font-medium text-muted-foreground">
-              No applications yet
+              No applications found
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Browse scholarships and colleges to start tracking applications
+              Browse colleges and scholarships to start tracking applications
             </p>
-            <Button variant="outline" className="mt-4" onClick={() => window.location.href = "/scholarships"}>
-              Browse Scholarships
-            </Button>
           </div>
         )}
       </motion.div>

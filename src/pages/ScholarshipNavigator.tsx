@@ -2,13 +2,11 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -17,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  GraduationCap,
   Search,
   Bookmark,
   BookmarkCheck,
@@ -39,6 +36,7 @@ const states = [
 ];
 
 interface EligibilityProfile {
+  name: string;
   age: string;
   state: string;
   gender: string;
@@ -47,23 +45,13 @@ interface EligibilityProfile {
   educationLevel: string;
   course: string;
   academicScore: string;
-  isDisabled: boolean;
-  isMinority: boolean;
-  isFirstGeneration: boolean;
 }
 
-interface MatchResult {
-  scholarship: any;
-  matchPercentage: number;
-  reasons: string[];
-}
-
-function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchResult {
+function calculateMatch(scholarship: any, profile: EligibilityProfile) {
   let score = 0;
   const totalCriteria = 6;
   const reasons: string[] = [];
 
-  // Income check
   if (scholarship.maxIncome && profile.annualFamilyIncome) {
     const income = parseInt(profile.annualFamilyIncome);
     if (income <= scholarship.maxIncome) {
@@ -77,10 +65,8 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
     reasons.push("○ No income restriction");
   }
 
-  // Education level
   if (scholarship.educationLevel) {
-    const levelMatch = scholarship.educationLevel.toLowerCase() === profile.educationLevel.toLowerCase();
-    if (levelMatch) {
+    if (scholarship.educationLevel.toLowerCase() === profile.educationLevel.toLowerCase()) {
       score += 1;
       reasons.push("✓ Education level matches");
     } else {
@@ -91,7 +77,6 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
     reasons.push("○ Open to all education levels");
   }
 
-  // Academic score
   if (scholarship.minScore && profile.academicScore) {
     const scoreVal = parseFloat(profile.academicScore);
     if (scoreVal >= scholarship.minScore) {
@@ -105,7 +90,6 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
     reasons.push("○ No minimum score requirement");
   }
 
-  // State
   if (scholarship.state && scholarship.state !== "all") {
     if (scholarship.state.toLowerCase() === profile.state.toLowerCase()) {
       score += 1;
@@ -118,7 +102,6 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
     reasons.push("✓ Available across all states");
   }
 
-  // Category
   if (scholarship.category && scholarship.category !== "general") {
     if (scholarship.category.toLowerCase() === profile.category.toLowerCase()) {
       score += 1;
@@ -131,7 +114,6 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
     reasons.push("✓ Open to all categories");
   }
 
-  // Gender
   if (scholarship.gender && scholarship.gender !== "all") {
     if (scholarship.gender.toLowerCase() === profile.gender.toLowerCase()) {
       score += 1;
@@ -145,7 +127,6 @@ function calculateMatch(scholarship: any, profile: EligibilityProfile): MatchRes
   }
 
   const matchPercentage = Math.round((score / totalCriteria) * 100);
-
   return { scholarship, matchPercentage, reasons };
 }
 
@@ -159,25 +140,22 @@ export default function ScholarshipNavigator() {
   const toggleBookmark = useMutation(api.scholarships.toggleBookmark);
   const createApplication = useMutation(api.scholarships.createApplication);
 
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [filterState, setFilterState] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("match");
   const [selectedScholarship, setSelectedScholarship] = useState<any>(null);
 
   const [profile, setProfile] = useState<EligibilityProfile>({
-    age: "",
-    state: "",
-    gender: "",
-    annualFamilyIncome: "",
-    category: "",
-    educationLevel: "",
-    course: "",
-    academicScore: "",
-    isDisabled: false,
-    isMinority: false,
-    isFirstGeneration: false,
+    name: user?.name || "Arjun Sharma",
+    age: "18",
+    state: "Maharashtra",
+    gender: "male",
+    annualFamilyIncome: "600000",
+    category: "general",
+    educationLevel: "undergraduate",
+    course: "Engineering",
+    academicScore: "87",
   });
 
   const isFormComplete = profile.age && profile.state && profile.educationLevel;
@@ -185,7 +163,6 @@ export default function ScholarshipNavigator() {
   const matchedScholarships = useMemo(() => {
     if (!scholarships) return [];
     if (!isFormComplete) return scholarships.map((s) => ({ scholarship: s, matchPercentage: 0, reasons: [] }));
-
     return scholarships.map((s) => calculateMatch(s, profile));
   }, [scholarships, profile, isFormComplete]);
 
@@ -197,8 +174,7 @@ export default function ScholarshipNavigator() {
       results = results.filter(
         (r) =>
           r.scholarship.name.toLowerCase().includes(q) ||
-          r.scholarship.provider.toLowerCase().includes(q) ||
-          r.scholarship.description.toLowerCase().includes(q)
+          r.scholarship.provider.toLowerCase().includes(q)
       );
     }
 
@@ -206,26 +182,14 @@ export default function ScholarshipNavigator() {
       results = results.filter((r) => r.scholarship.type === filterType);
     }
 
-    if (filterState !== "all") {
-      results = results.filter(
-        (r) => r.scholarship.state === "all" || r.scholarship.state === filterState
-      );
-    }
-
     if (sortBy === "match" && isFormComplete) {
       results.sort((a, b) => b.matchPercentage - a.matchPercentage);
-    } else if (sortBy === "deadline") {
-      results.sort(
-        (a, b) =>
-          new Date(a.scholarship.deadline).getTime() -
-          new Date(b.scholarship.deadline).getTime()
-      );
     } else if (sortBy === "name") {
       results.sort((a, b) => a.scholarship.name.localeCompare(b.scholarship.name));
     }
 
     return results;
-  }, [matchedScholarships, searchQuery, filterType, filterState, sortBy, isFormComplete]);
+  }, [matchedScholarships, searchQuery, filterType, sortBy, isFormComplete]);
 
   const bookmarkedIds = useMemo(
     () =>
@@ -238,57 +202,32 @@ export default function ScholarshipNavigator() {
   const handleBookmark = useCallback(
     async (id: string) => {
       if (!user) return;
-      await toggleBookmark({
-        userId: user._id,
-        itemType: "scholarship",
-        itemId: id,
-      });
+      await toggleBookmark({ userId: user._id, itemType: "scholarship", itemId: id });
     },
     [user, toggleBookmark]
-  );
-
-  const handleApply = useCallback(
-    async (s: any) => {
-      if (!user) return;
-      await createApplication({
-        userId: user._id,
-        scholarshipId: s._id,
-        type: "scholarship",
-        name: s.name,
-        status: "interested",
-        deadline: s.deadline,
-      });
-    },
-    [user, createApplication]
   );
 
   return (
     <div className="p-6 md:p-8">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-6xl space-y-6">
         {/* Hero */}
-        <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/5 via-primary/[0.02] to-transparent p-8 md:p-10">
-          <div className="relative z-10">
-            <Badge variant="secondary" className="mb-4 text-xs">
-              🎓 Scholarship Navigator
-            </Badge>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-              Find Scholarships You're Eligible For
-            </h1>
-            <p className="mt-2 max-w-2xl text-muted-foreground">
-              Discover relevant government, educational, and private scholarships based on your profile.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button onClick={() => setShowForm(true)}>
-                <Search className="mr-2 size-4" />
-                Find My Scholarships
-              </Button>
-              <Button variant="outline" onClick={() => setShowForm(false)}>
-                Browse All Scholarships
-              </Button>
-            </div>
-          </div>
-          <div className="absolute right-6 top-6 text-6xl opacity-10 md:right-10 md:top-8">
-            🎓
+        <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-accent/50 to-card p-8 text-center md:p-10">
+          <Badge variant="secondary" className="mb-4 gap-1 font-mono text-xs uppercase tracking-widest">
+            ★ Scholarship Navigator
+          </Badge>
+          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+            Find Scholarships You're Eligible For
+          </h1>
+          <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
+            Discover relevant government, educational, and private scholarships based on your profile.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Button onClick={() => setShowForm(true)} className="px-8">
+              Find My Scholarships
+            </Button>
+            <Button variant="outline" onClick={() => setShowForm(!showForm)} className="px-8">
+              {showForm ? "Hide Profile Form" : "Browse All Scholarships"}
+            </Button>
           </div>
         </div>
 
@@ -301,30 +240,33 @@ export default function ScholarshipNavigator() {
               exit={{ opacity: 0, height: 0 }}
             >
               <Card className="border-border/60">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Eligibility Profile</CardTitle>
-                    <Button variant="ghost" size="icon" onClick={() => setShowForm(false)} className="size-8">
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <CardContent className="p-6">
+                  <h2 className="text-lg font-bold">Your Eligibility Profile</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Fill in your details to get personalized scholarship matches.
+                  </p>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Age</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Name</Label>
+                      <Input
+                        value={profile.name}
+                        onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Age</Label>
                       <Input
                         type="number"
-                        placeholder="e.g. 18"
                         value={profile.age}
                         onChange={(e) => setProfile({ ...profile, age: e.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">State</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">State</Label>
                       <Select value={profile.state} onValueChange={(v) => setProfile({ ...profile, state: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select state" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {states.map((s) => (
@@ -334,10 +276,10 @@ export default function ScholarshipNavigator() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Gender</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Gender</Label>
                       <Select value={profile.gender} onValueChange={(v) => setProfile({ ...profile, gender: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select gender" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="male">Male</SelectItem>
@@ -347,21 +289,18 @@ export default function ScholarshipNavigator() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Annual Family Income (₹)</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Annual Family Income (₹)</Label>
                       <Input
                         type="number"
-                        placeholder="e.g. 300000"
                         value={profile.annualFamilyIncome}
-                        onChange={(e) =>
-                          setProfile({ ...profile, annualFamilyIncome: e.target.value })
-                        }
+                        onChange={(e) => setProfile({ ...profile, annualFamilyIncome: e.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Category</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Community / Category</Label>
                       <Select value={profile.category} onValueChange={(v) => setProfile({ ...profile, category: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="general">General</SelectItem>
@@ -373,10 +312,10 @@ export default function ScholarshipNavigator() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Education Level</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Education Level</Label>
                       <Select value={profile.educationLevel} onValueChange={(v) => setProfile({ ...profile, educationLevel: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select level" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="school">School (10th/12th)</SelectItem>
@@ -388,50 +327,28 @@ export default function ScholarshipNavigator() {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Course/Field</Label>
-                      <Input
-                        placeholder="e.g. Computer Science"
-                        value={profile.course}
-                        onChange={(e) => setProfile({ ...profile, course: e.target.value })}
-                      />
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Course / Field</Label>
+                      <Select value={profile.course} onValueChange={(v) => setProfile({ ...profile, course: v })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Engineering">Engineering</SelectItem>
+                          <SelectItem value="Medicine">Medicine</SelectItem>
+                          <SelectItem value="Arts">Arts</SelectItem>
+                          <SelectItem value="Commerce">Commerce</SelectItem>
+                          <SelectItem value="Science">Science</SelectItem>
+                          <SelectItem value="Law">Law</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Academic % / CGPA</Label>
+                      <Label className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Academic % / CGPA</Label>
                       <Input
                         type="number"
-                        placeholder="e.g. 85"
                         value={profile.academicScore}
-                        onChange={(e) =>
-                          setProfile({ ...profile, academicScore: e.target.value })
-                        }
+                        onChange={(e) => setProfile({ ...profile, academicScore: e.target.value })}
                       />
-                    </div>
-                    <div className="flex items-end gap-6 pt-2">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={profile.isMinority}
-                          onChange={(e) =>
-                            setProfile({ ...profile, isMinority: e.target.checked })
-                          }
-                          className="size-4 rounded border-input"
-                        />
-                        Minority
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={profile.isFirstGeneration}
-                          onChange={(e) =>
-                            setProfile({
-                              ...profile,
-                              isFirstGeneration: e.target.checked,
-                            })
-                          }
-                          className="size-4 rounded border-input"
-                        />
-                        First-gen
-                      </label>
                     </div>
                   </div>
                 </CardContent>
@@ -470,20 +387,18 @@ export default function ScholarshipNavigator() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="match">Best Match</SelectItem>
-              <SelectItem value="deadline">Deadline</SelectItem>
               <SelectItem value="name">Name</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Results count */}
         <p className="text-sm text-muted-foreground">
           Showing {filtered.length} scholarship{filtered.length !== 1 ? "s" : ""}
           {isFormComplete && " matched to your profile"}
         </p>
 
         {/* Scholarship Cards */}
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-4">
           {filtered.map((result, idx) => {
             const s = result.scholarship;
             const daysUntil = Math.ceil(
@@ -519,8 +434,8 @@ export default function ScholarshipNavigator() {
                               result.matchPercentage >= 80
                                 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                 : result.matchPercentage >= 50
-                                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                  : "bg-red-500/10 text-red-600 dark:text-red-400"
+                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                : "bg-red-500/10 text-red-600 dark:text-red-400"
                             }`}
                           >
                             {result.matchPercentage}% Match
@@ -545,22 +460,16 @@ export default function ScholarshipNavigator() {
                       <Badge variant="outline" className="text-[10px] capitalize">{s.type}</Badge>
                       <Badge variant="outline" className="text-[10px]">{s.educationLevel}</Badge>
                       <Badge variant="outline" className="text-[10px] capitalize">{s.category}</Badge>
-                      {s.state !== "all" && (
-                        <Badge variant="outline" className="text-[10px]">{s.state}</Badge>
-                      )}
                     </div>
 
                     <p className="mt-3 text-xs text-muted-foreground line-clamp-2">{s.benefit}</p>
 
-                    {/* Match reasons */}
                     {result.reasons.length > 0 && (
                       <div className="mt-3 rounded-lg bg-accent/50 p-3">
                         <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">Why am I eligible?</p>
                         <div className="space-y-1">
                           {result.reasons.map((reason, i) => (
-                            <p key={i} className="text-[11px] text-muted-foreground">
-                              {reason}
-                            </p>
+                            <p key={i} className="text-[11px] text-muted-foreground">{reason}</p>
                           ))}
                         </div>
                       </div>
@@ -586,7 +495,6 @@ export default function ScholarshipNavigator() {
                         <Button
                           size="sm"
                           className="h-8 text-xs"
-                          onClick={() => handleApply(s)}
                         >
                           Apply Now
                         </Button>
@@ -601,15 +509,14 @@ export default function ScholarshipNavigator() {
 
         {filtered.length === 0 && (
           <div className="rounded-xl border border-dashed p-12 text-center">
-            <GraduationCap className="mx-auto size-12 text-muted-foreground/30" />
-            <p className="mt-4 text-sm font-medium text-muted-foreground">No scholarships found</p>
+            <p className="text-sm font-medium text-muted-foreground">No scholarships found</p>
             <p className="mt-1 text-xs text-muted-foreground/70">
               Try adjusting your filters or search query
             </p>
           </div>
         )}
 
-        {/* Scholarship Detail Dialog */}
+        {/* Detail Dialog */}
         <AnimatePresence>
           {selectedScholarship && (
             <motion.div
@@ -635,8 +542,7 @@ export default function ScholarshipNavigator() {
                     <X className="size-4" />
                   </Button>
                 </div>
-                <Separator className="my-4" />
-                <div className="space-y-3 text-sm">
+                <div className="mt-4 space-y-3 text-sm">
                   <div>
                     <span className="font-medium">Benefit:</span>{" "}
                     <span className="text-muted-foreground">{selectedScholarship.benefit}</span>
@@ -653,30 +559,12 @@ export default function ScholarshipNavigator() {
                     <span className="font-medium">Description:</span>{" "}
                     <span className="text-muted-foreground">{selectedScholarship.description}</span>
                   </div>
-                  {selectedScholarship.officialUrl && (
-                    <a
-                      href={selectedScholarship.officialUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
-                    >
-                      Visit Official Website <ExternalLink className="size-3" />
-                    </a>
-                  )}
                 </div>
                 <div className="mt-6 flex gap-3">
                   <Button variant="outline" className="flex-1" onClick={() => setSelectedScholarship(null)}>
                     Close
                   </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      handleApply(selectedScholarship);
-                      setSelectedScholarship(null);
-                    }}
-                  >
-                    Apply Now
-                  </Button>
+                  <Button className="flex-1">Apply Now</Button>
                 </div>
               </motion.div>
             </motion.div>

@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -25,7 +24,8 @@ import {
   Filter,
   ArrowUpDown,
   X,
-  BookOpen,
+  CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -110,11 +110,9 @@ export default function CollegeDiscovery() {
       >
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-            Discover Colleges
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Discover opportunities</h1>
           <p className="mt-1 text-muted-foreground">
-            Find the right college based on your preferences and eligibility
+            Find a path that fits your profile, goals and budget.
           </p>
         </div>
 
@@ -123,7 +121,7 @@ export default function CollegeDiscovery() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search colleges, courses, locations..."
+              placeholder="Search colleges, courses, scholarships or exams..."
               className="pl-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -131,36 +129,46 @@ export default function CollegeDiscovery() {
           </div>
           <Select value={filterState} onValueChange={setFilterState}>
             <SelectTrigger className="w-[160px]">
-              <MapPin className="mr-2 size-3.5" />
-              <SelectValue placeholder="State" />
+              <SelectValue placeholder="All locations" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All States</SelectItem>
+              <SelectItem value="all">All locations</SelectItem>
               {uniqueStates.map((s) => (
                 <SelectItem key={s} value={s}>{s}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[160px]">
-              <ArrowUpDown className="mr-2 size-3.5" />
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ranking">Ranking</SelectItem>
-              <SelectItem value="name">Name</SelectItem>
-            </SelectContent>
-          </Select>
+          <Button variant="outline" className="gap-2">
+            <Filter className="size-3.5" />
+            More filters
+          </Button>
         </div>
 
-        <p className="text-sm text-muted-foreground">
-          Showing {filtered.length} college{filtered.length !== 1 ? "s" : ""}
-        </p>
+        {/* Profile Tags */}
+        <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="text-primary">👤</span> Based on your profile:
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="text-xs">12th: 87%</Badge>
+            <Badge variant="secondary" className="text-xs">B.Tech CSE</Badge>
+            <Badge variant="secondary" className="text-xs">₹2.5L budget</Badge>
+          </div>
+          <span className="ml-auto text-sm font-bold text-primary">{filtered.length} MATCHES</span>
+        </div>
+
+        {/* Section Title */}
+        <h2 className="text-lg font-bold">Colleges for your path</h2>
 
         {/* College Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-4">
           {filtered.map((college, idx) => {
             const isShortlisted = shortlistedIds.has(college._id);
+            const deadlineDays = Math.ceil(
+              (new Date(college.applicationDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            );
+            const isUrgent = deadlineDays <= 7 && deadlineDays > 0;
+
             return (
               <motion.div
                 key={college._id}
@@ -168,82 +176,95 @@ export default function CollegeDiscovery() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
               >
-                <Card className="group h-full border-border/60 transition-all hover:border-primary/30 hover:shadow-md">
-                  <CardContent className="flex flex-col p-5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold leading-tight">{college.name}</h3>
-                          {college.ranking && (
-                            <Badge variant="secondary" className="shrink-0 text-[10px]">
-                              #{college.ranking}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="size-3" />
-                          {college.location}, {college.state}
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={() => handleToggleBookmark(college._id)}
-                      >
-                        {isShortlisted ? (
-                          <Heart className="size-4 fill-red-500 text-red-500" />
-                        ) : (
-                          <HeartOff className="size-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
-                      {college.description}
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {college.entranceExams.map((exam) => (
-                        <Badge key={exam} variant="outline" className="text-[10px]">
-                          {exam}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <div className="mt-auto space-y-2 border-t pt-3">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Fees</span>
-                        <span className="font-medium">{college.fees}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Deadline</span>
-                        <span className="font-medium">{college.applicationDeadline}</span>
-                      </div>
+                <Card className="group border-border/60 transition-all hover:border-primary/30 hover:shadow-md">
+                  <CardContent className="p-5">
+                    {/* Top Row: Verified + Status Badge */}
+                    <div className="flex items-center gap-2 mb-2">
                       {college.isVerified && (
-                        <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-                          <Star className="size-3" />
-                          Verified Source
-                        </div>
+                        <span className="flex items-center gap-1 text-xs text-emerald-400">
+                          <CheckCircle2 className="size-3.5" />
+                          Officially verified
+                        </span>
                       )}
+                      <Badge variant="secondary" className="text-[10px]">
+                        {isUrgent ? "Closing Soon" : "Open"}
+                      </Badge>
                     </div>
 
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 h-8 text-xs"
-                        onClick={() => setSelectedCollege(college)}
-                      >
-                        View Details
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => handleToggleBookmark(college._id)}
-                      >
-                        {isShortlisted ? "Shortlisted" : "Shortlist"}
-                      </Button>
+                    {/* Name + Match */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="text-base font-bold">{college.name}</h3>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {college.courses[0] || "B.Tech CSE"} · {college.location}, {college.state}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-3xl font-bold text-primary">
+                          {college.ranking ? Math.max(70, 100 - (college.ranking || 50) + 10) : 85}%
+                        </p>
+                        <p className="text-xs text-muted-foreground">Match</p>
+                      </div>
+                    </div>
+
+                    {/* Stats Row */}
+                    <div className="mt-4 flex flex-wrap items-center gap-6 text-sm">
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">NIRF</p>
+                        <p className="font-medium">#{college.ranking || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Avg Package</p>
+                        <p className="font-medium">₹{college.ranking ? (14 - college.ranking * 0.1).toFixed(1) : "12.0"}L</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Annual Fee</p>
+                        <p className="font-medium">{college.fees}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Exam</p>
+                        <p className="font-medium">{college.entranceExams[0] || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Deadline</p>
+                        <p className={`font-medium ${isUrgent ? "text-amber-500" : ""}`}>
+                          {college.applicationDeadline}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-primary">
+                        <Star className="size-3" />
+                        Scholarship
+                      </div>
+                    </div>
+
+                    {/* Bottom Row */}
+                    <div className="mt-4 flex items-center justify-between border-t pt-4">
+                      <span className="flex items-center gap-1 text-xs text-emerald-400">
+                        <CheckCircle2 className="size-3" />
+                        Eligible
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-9"
+                          onClick={() => handleToggleBookmark(college._id)}
+                        >
+                          {isShortlisted ? (
+                            <Heart className="size-5 fill-red-500 text-red-500" />
+                          ) : (
+                            <Heart className="size-5 text-muted-foreground" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => setSelectedCollege(college)}
+                        >
+                          View details <ArrowRight className="size-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -264,7 +285,7 @@ export default function CollegeDiscovery() {
           </div>
         )}
 
-        {/* College Detail Dialog */}
+        {/* Detail Dialog */}
         <AnimatePresence>
           {selectedCollege && (
             <motion.div
@@ -293,8 +314,7 @@ export default function CollegeDiscovery() {
                     <X className="size-4" />
                   </Button>
                 </div>
-                <Separator className="my-4" />
-                <div className="space-y-3 text-sm">
+                <div className="mt-4 space-y-3 text-sm">
                   <p className="text-muted-foreground">{selectedCollege.description}</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-accent/50 p-3">
@@ -325,14 +345,6 @@ export default function CollegeDiscovery() {
                   <div>
                     <p className="font-medium">Eligibility</p>
                     <p className="text-muted-foreground">{selectedCollege.eligibility}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Scholarships Available</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {selectedCollege.scholarshipsAvailable.map((s: string) => (
-                        <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
-                      ))}
-                    </div>
                   </div>
                   {selectedCollege.officialUrl && (
                     <a
@@ -367,3 +379,5 @@ export default function CollegeDiscovery() {
     </div>
   );
 }
+
+

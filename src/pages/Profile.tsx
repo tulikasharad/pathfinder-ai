@@ -1,309 +1,236 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useTheme } from "@/hooks/use-theme";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { User, Sun, Moon, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { CheckCircle2 } from "lucide-react";
 
-const states = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi",
-];
+const DEMO_PROFILE = {
+  name: "Arjun Sharma",
+  email: "arjun.sharma@gmail.com",
+  gender: "Male",
+  category: "General",
+  state: "Maharashtra",
+  city: "Mumbai",
+  twelfthPercentage: "87%",
+  studentType: "12th",
+  preferredCourse: "B.Tech CSE",
+  specialization: "Artificial Intelligence",
+  annualBudget: "₹2.5L",
+  hostelRequired: "Yes",
+  scholarshipRequired: "Yes",
+  preferredCities: ["Pune", "Bangalore", "Hyderabad", "Chennai"],
+  annualFeeBudget: "₹2.5L",
+  profileStatus: "Active",
+  completionPercent: 78,
+  completedSections: ["Personal info", "Academic details", "Preferences"],
+  pendingSections: ["Entrance exams", "Documents"],
+};
+
+function ProfileLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+      {children}
+    </p>
+  );
+}
 
 export default function Profile() {
   const { user } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const updateProfile = useMutation(api.scholarships.updateProfile);
 
-  const profile = user?.studentProfile;
-  const [formData, setFormData] = useState({
-    name: user?.name || "",
-    age: profile?.age?.toString() || "",
-    state: profile?.state || "",
-    gender: profile?.gender || "",
-    annualFamilyIncome: profile?.annualFamilyIncome?.toString() || "",
-    category: profile?.category || "",
-    educationLevel: profile?.educationLevel || "",
-    schoolType: profile?.schoolType || "",
-    course: profile?.course || "",
-    institutionType: profile?.institutionType || "",
-    academicScore: profile?.academicScore?.toString() || "",
-    isDisabled: profile?.isDisabled || false,
-    isMinority: profile?.isMinority || false,
-    isFirstGeneration: profile?.isFirstGeneration || false,
-  });
-
+  const [isEditing, setIsEditing] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const handleSave = useCallback(async () => {
-    if (!user) return;
-    await updateProfile({
-      userId: user._id,
-      name: formData.name || undefined,
-      studentProfile: {
-        age: formData.age ? parseInt(formData.age) : undefined,
-        state: formData.state || undefined,
-        gender: formData.gender || undefined,
-        annualFamilyIncome: formData.annualFamilyIncome
-          ? parseInt(formData.annualFamilyIncome)
-          : undefined,
-        category: formData.category || undefined,
-        educationLevel: formData.educationLevel || undefined,
-        schoolType: formData.schoolType || undefined,
-        course: formData.course || undefined,
-        institutionType: formData.institutionType || undefined,
-        academicScore: formData.academicScore
-          ? parseFloat(formData.academicScore)
-          : undefined,
-        isDisabled: formData.isDisabled,
-        isMinority: formData.isMinority,
-        isFirstGeneration: formData.isFirstGeneration,
-      },
-    });
-    setSaved(true);
-    toast.success("Profile saved successfully!");
-    setTimeout(() => setSaved(false), 2000);
-  }, [user, formData, updateProfile]);
+  // Use user data or demo data
+  const profile = useMemo(() => {
+    if (user?.studentProfile?.age) {
+      return {
+        name: user.name || "Student",
+        email: user.email || "guest@collegepath",
+        gender: user.studentProfile.gender || "—",
+        category: user.studentProfile.category || "—",
+        state: user.studentProfile.state || "—",
+        city: "—",
+        twelfthPercentage: user.studentProfile.academicScore ? `${user.studentProfile.academicScore}%` : "—",
+        studentType: user.studentProfile.educationLevel || "—",
+        preferredCourse: user.studentProfile.course || "—",
+        specialization: "—",
+        annualBudget: user.studentProfile.annualFamilyIncome ? `₹${(user.studentProfile.annualFamilyIncome / 100000).toFixed(1)}L` : "—",
+        hostelRequired: "—",
+        scholarshipRequired: "Yes",
+        preferredCities: ["Pune", "Bangalore", "Hyderabad", "Chennai"],
+        annualFeeBudget: user.studentProfile.annualFamilyIncome ? `₹${(user.studentProfile.annualFamilyIncome / 100000).toFixed(1)}L` : "—",
+        profileStatus: "Active",
+        completionPercent: user.onboardingCompleted ? 100 : 50,
+        completedSections: ["Personal info", "Academic details"],
+        pendingSections: ["Entrance exams", "Documents", "Preferences"],
+      };
+    }
+    return DEMO_PROFILE;
+  }, [user]);
 
   return (
     <div className="p-6 md:p-8">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mx-auto max-w-3xl space-y-6"
+        className="mx-auto max-w-6xl space-y-6"
       >
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Profile</h1>
-          <p className="mt-1 text-muted-foreground">
-            Manage your student profile and preferences
-          </p>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Your Profile</h1>
+            <p className="mt-1 text-muted-foreground">
+              Your academic details power every match and recommendation.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setIsEditing(!isEditing)}>
+            {isEditing ? "Done" : "Edit profile"}
+          </Button>
         </div>
 
-        {/* User Card */}
-        <Card className="border-border/60">
-          <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex size-14 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <User className="size-7" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold">{user?.name || "Student"}</h2>
-              <p className="text-sm text-muted-foreground">{user?.email || "guest@collegepath"}</p>
-              {user?.onboardingCompleted && (
-                <Badge variant="secondary" className="mt-1 text-[10px]">
-                  <CheckCircle2 className="mr-1 size-3" />
-                  Profile Complete
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Theme */}
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="text-base">Appearance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {theme === "light" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+        {/* Main Grid */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Left Column - 2 cols */}
+          <div className="space-y-6 lg:col-span-2">
+            {/* Personal Information */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+              <ProfileLabel>Personal Information</ProfileLabel>
+              <div className="mt-4 grid grid-cols-2 gap-6">
                 <div>
-                  <p className="text-sm font-medium">
-                    {theme === "light" ? "Light Mode" : "Dark Mode"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Switch between light and dark themes
-                  </p>
+                  <ProfileLabel>Full Name</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.name}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Email</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.email}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Gender</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.gender}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Category</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.category}</p>
+                </div>
+                <div>
+                  <ProfileLabel>State</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.state}</p>
+                </div>
+                <div>
+                  <ProfileLabel>City</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.city}</p>
                 </div>
               </div>
-              <Switch checked={theme === "dark"} onCheckedChange={toggleTheme} />
             </div>
-          </CardContent>
-        </Card>
 
-        {/* Student Profile Form */}
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="text-base">Student Profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Full Name</Label>
-                <Input
-                  placeholder="Your name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Age</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 18"
-                  value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">State</Label>
-                <Select
-                  value={formData.state}
-                  onValueChange={(v) => setFormData({ ...formData, state: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select state" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {states.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Gender</Label>
-                <Select
-                  value={formData.gender}
-                  onValueChange={(v) => setFormData({ ...formData, gender: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select gender" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Annual Family Income (₹)</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 300000"
-                  value={formData.annualFamilyIncome}
-                  onChange={(e) =>
-                    setFormData({ ...formData, annualFamilyIncome: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Category</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(v) => setFormData({ ...formData, category: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="general">General</SelectItem>
-                    <SelectItem value="OBC">OBC</SelectItem>
-                    <SelectItem value="SC">SC</SelectItem>
-                    <SelectItem value="ST">ST</SelectItem>
-                    <SelectItem value="EWS">EWS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Education Level</Label>
-                <Select
-                  value={formData.educationLevel}
-                  onValueChange={(v) => setFormData({ ...formData, educationLevel: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="school">School (10th/12th)</SelectItem>
-                    <SelectItem value="undergraduate">Undergraduate</SelectItem>
-                    <SelectItem value="postgraduate">Postgraduate</SelectItem>
-                    <SelectItem value="diploma">Diploma</SelectItem>
-                    <SelectItem value="vocational">Vocational</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Course/Field</Label>
-                <Input
-                  placeholder="e.g. Computer Science"
-                  value={formData.course}
-                  onChange={(e) => setFormData({ ...formData, course: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Academic % / CGPA</Label>
-                <Input
-                  type="number"
-                  placeholder="e.g. 85"
-                  value={formData.academicScore}
-                  onChange={(e) =>
-                    setFormData({ ...formData, academicScore: e.target.value })
-                  }
-                />
+            {/* Academic Details */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+              <ProfileLabel>Academic Details</ProfileLabel>
+              <div className="mt-4 grid grid-cols-2 gap-6">
+                <div>
+                  <ProfileLabel>12th Percentage</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.twelfthPercentage}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Student Type</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.studentType}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Preferred Course</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.preferredCourse}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Specialization</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.specialization}</p>
+                </div>
               </div>
             </div>
 
-            <Separator />
+            {/* Financial Preferences */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+              <ProfileLabel>Financial Preferences</ProfileLabel>
+              <div className="mt-4 grid grid-cols-2 gap-6">
+                <div>
+                  <ProfileLabel>Annual Budget</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.annualBudget}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Hostel Required</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.hostelRequired}</p>
+                </div>
+                <div>
+                  <ProfileLabel>Scholarship Required</ProfileLabel>
+                  <p className="mt-1 text-base font-medium">{profile.scholarshipRequired}</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-            <div className="flex flex-wrap gap-6">
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={formData.isMinority}
-                  onCheckedChange={(v) => setFormData({ ...formData, isMinority: v })}
-                />
-                Minority status
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={formData.isFirstGeneration}
-                  onCheckedChange={(v) =>
-                    setFormData({ ...formData, isFirstGeneration: v })
-                  }
-                />
-                First-generation student
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={formData.isDisabled}
-                  onCheckedChange={(v) => setFormData({ ...formData, isDisabled: v })}
-                />
-                Disability status
-              </label>
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* Profile Completion */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+              <ProfileLabel>Profile Completion</ProfileLabel>
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Overall completeness</p>
+                  <p className="text-sm font-bold text-primary">{profile.completionPercent}%</p>
+                </div>
+                {/* Progress bar */}
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary to-primary/60 transition-all"
+                    style={{ width: `${profile.completionPercent}%` }}
+                  />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {profile.completedSections.map((section) => (
+                    <div key={section} className="flex items-center gap-2">
+                      <CheckCircle2 className="size-4 text-emerald-500" />
+                      <span className="text-sm">{section}</span>
+                    </div>
+                  ))}
+                  {profile.pendingSections.map((section) => (
+                    <div key={section} className="flex items-center gap-2">
+                      <div className="size-4 rounded-full border-2 border-muted-foreground/30" />
+                      <span className="text-sm text-muted-foreground">{section}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <Button onClick={handleSave} className="w-full sm:w-auto">
-              {saved ? (
-                <>
-                  <CheckCircle2 className="mr-2 size-4" />
-                  Saved!
-                </>
-              ) : (
-                "Save Profile"
-              )}
-            </Button>
-          </CardContent>
-        </Card>
+            {/* Saved Preferences */}
+            <div className="rounded-xl border border-border/60 bg-card p-6">
+              <ProfileLabel>Saved Preferences</ProfileLabel>
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <ProfileLabel>Preferred cities</ProfileLabel>
+                  <p className="text-sm font-medium text-right">
+                    {profile.preferredCities.join(", ")}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <ProfileLabel>Annual fee budget</ProfileLabel>
+                  <p className="text-sm font-medium">{profile.annualFeeBudget}</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <ProfileLabel>Course</ProfileLabel>
+                  <p className="text-sm font-medium">{profile.preferredCourse}</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <ProfileLabel>Profile status</ProfileLabel>
+                  <p className="text-sm font-medium text-emerald-400">{profile.profileStatus}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </motion.div>
     </div>
   );

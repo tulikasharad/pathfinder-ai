@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,22 +18,68 @@ import {
   Calendar,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   Plus,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  urgent: { label: "Urgent", color: "bg-red-500/10 text-red-600 dark:text-red-400" },
-  high: { label: "High", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  medium: { label: "Medium", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  low: { label: "Low", color: "bg-gray-500/10 text-gray-600 dark:text-gray-400" },
-};
-
 function getDaysUntil(dateStr: string) {
-  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return Math.ceil(
+    (new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  );
 }
+
+const DEMO_DEADLINES = [
+  {
+    _id: "demo-d1",
+    name: "VIT University Vellore",
+    course: "B.Tech CSE (AI & ML) · Phase 1",
+    deadline: "25 Aug 2026",
+    examDate: "8 Sept 2026",
+    verified: "2026-08-12",
+    status: "Urgent",
+    statusColor: "bg-red-500/15 text-red-500",
+    saved: true,
+    sourceUrl: "https://vit.ac.in",
+  },
+  {
+    _id: "demo-d2",
+    name: "Northstar Institute of Technology",
+    course: "B.Tech CSE · Phase 1",
+    deadline: "30 Aug 2026",
+    examDate: "10 Sept 2026",
+    verified: "2026-08-10",
+    status: "Closing Soon",
+    statusColor: "bg-amber-500/15 text-amber-500",
+    saved: true,
+    sourceUrl: "https://northstar.edu",
+  },
+  {
+    _id: "demo-d3",
+    name: "BITS Pilani",
+    course: "B.E. CSE · Phase 1",
+    deadline: "28 Aug 2026",
+    examDate: "8 Sept 2026",
+    verified: "2026-08-15",
+    status: "Closing Soon",
+    statusColor: "bg-amber-500/15 text-amber-500",
+    saved: true,
+    sourceUrl: "https://bits-pilani.ac.in",
+  },
+  {
+    _id: "demo-d4",
+    name: "Symbiosis Institute of Technology",
+    course: "B.Tech CSE · Phase 1",
+    deadline: "5 Sept 2026",
+    examDate: "15 Sept 2026",
+    verified: "2026-08-10",
+    status: "Upcoming",
+    statusColor: "bg-blue-500/15 text-blue-500",
+    saved: false,
+    sourceUrl: "https://sit.ac.in",
+  },
+];
 
 export default function Deadlines() {
   const { user } = useAuth();
@@ -52,19 +98,34 @@ export default function Deadlines() {
     priority: "medium",
   });
 
+  // Use demo data if no real data
+  const allDeadlines = useMemo(() => {
+    if (deadlines && deadlines.length > 0) {
+      return deadlines.map((d) => ({
+        _id: d._id,
+        name: d.title,
+        course: d.type || "Application",
+        deadline: d.date,
+        examDate: "—",
+        verified: "—",
+        status: getDaysUntil(d.date) <= 3 ? "Urgent" : "Upcoming",
+        statusColor: getDaysUntil(d.date) <= 3 ? "bg-red-500/15 text-red-500" : "bg-blue-500/15 text-blue-500",
+        saved: true,
+        sourceUrl: "",
+        isCompleted: d.isCompleted,
+      }));
+    }
+    return DEMO_DEADLINES.map((d) => ({ ...d, isCompleted: false }));
+  }, [deadlines]);
+
   const sorted = useMemo(() => {
-    if (!deadlines) return [];
-    return [...deadlines]
-      .map((d) => ({ ...d, daysUntil: getDaysUntil(d.date) }))
+    return [...allDeadlines]
+      .map((d) => ({ ...d, daysUntil: getDaysUntil(d.deadline) }))
       .sort((a, b) => {
         if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-        const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-        if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-          return (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
-        }
         return a.daysUntil - b.daysUntil;
       });
-  }, [deadlines]);
+  }, [allDeadlines]);
 
   const handleCreate = useCallback(async () => {
     if (!user || !newDeadline.title || !newDeadline.date) return;
@@ -79,10 +140,6 @@ export default function Deadlines() {
     setShowForm(false);
   }, [user, newDeadline, createDeadline]);
 
-  const upcoming = sorted.filter((d) => !d.isCompleted && d.daysUntil >= 0);
-  const overdue = sorted.filter((d) => !d.isCompleted && d.daysUntil < 0);
-  const completed = sorted.filter((d) => d.isCompleted);
-
   return (
     <div className="p-6 md:p-8">
       <motion.div
@@ -90,225 +147,140 @@ export default function Deadlines() {
         animate={{ opacity: 1, y: 0 }}
         className="mx-auto max-w-6xl space-y-6"
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Deadlines</h1>
-            <p className="mt-1 text-muted-foreground">
-              Stay on top of important dates and never miss a deadline
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Deadlines</h1>
+          <p className="mt-1 text-muted-foreground">
+            Your upcoming college application and exam deadlines.
+          </p>
+        </div>
+
+        {/* Alert Banners */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
+            <Badge className="bg-amber-500/15 text-amber-500 border-0 font-mono text-[10px] uppercase">
+              Deadline Extended
+            </Badge>
+            <p className="text-sm">
+              <span className="font-bold">VIT University Vellore</span> extended the Phase 1 deadline from{" "}
+              <span className="text-muted-foreground line-through">20 Aug 2026</span> to{" "}
+              <span className="font-bold text-amber-500">25 Aug 2026</span>.
             </p>
           </div>
-          <Button onClick={() => setShowForm(!showForm)}>
-            <Plus className="mr-2 size-4" />
-            Add Deadline
-          </Button>
+          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
+            <Badge className="bg-emerald-500/15 text-emerald-500 border-0 font-mono text-[10px] uppercase">
+              Exam Rescheduled
+            </Badge>
+            <p className="text-sm">
+              <span className="font-bold">VITEEE Phase 1</span> rescheduled from{" "}
+              <span className="text-muted-foreground line-through">5 Sept 2026</span> to{" "}
+              <span className="font-bold text-emerald-500">8 Sept 2026</span>.
+            </p>
+          </div>
         </div>
 
-        {/* Add Form */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-            >
-              <Card className="border-border/60">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">New Deadline</CardTitle>
-                    <Button variant="ghost" size="icon" onClick={() => setShowForm(false)} className="size-8">
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Title</Label>
-                      <Input
-                        placeholder="e.g. JEE Registration"
-                        value={newDeadline.title}
-                        onChange={(e) => setNewDeadline({ ...newDeadline, title: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Date</Label>
-                      <Input
-                        type="date"
-                        value={newDeadline.date}
-                        onChange={(e) => setNewDeadline({ ...newDeadline, date: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Type</Label>
-                      <Select
-                        value={newDeadline.type}
-                        onValueChange={(v) => setNewDeadline({ ...newDeadline, type: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="exam">Exam</SelectItem>
-                          <SelectItem value="application">Application</SelectItem>
-                          <SelectItem value="scholarship">Scholarship</SelectItem>
-                          <SelectItem value="document">Document</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Priority</Label>
-                      <Select
-                        value={newDeadline.priority}
-                        onValueChange={(v) => setNewDeadline({ ...newDeadline, priority: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="urgent">Urgent</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="low">Low</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <Button onClick={handleCreate} className="mt-4" disabled={!newDeadline.title || !newDeadline.date}>
-                    Add Deadline
-                  </Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Deadline Cards */}
+        <div className="space-y-3">
+          {sorted.map((d, idx) => {
+            const daysUntil = d.daysUntil;
+            const isUrgent = daysUntil <= 3 && daysUntil >= 0;
+            const isPast = daysUntil < 0;
 
-        {/* Overdue */}
-        {overdue.length > 0 && (
-          <div>
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-red-600 dark:text-red-400">
-              <AlertTriangle className="size-4" />
-              Overdue ({overdue.length})
-            </h2>
-            <div className="space-y-2">
-              {overdue.map((d) => (
-                <DeadlineItem
-                  key={d._id}
-                  deadline={d}
-                  onToggle={() => toggleDeadline({ id: d._id })}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Upcoming */}
-        <div>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Clock className="size-4 text-primary" />
-            Upcoming ({upcoming.length})
-          </h2>
-          <div className="space-y-2">
-            {upcoming.map((d) => (
-              <DeadlineItem
+            return (
+              <motion.div
                 key={d._id}
-                deadline={d}
-                onToggle={() => toggleDeadline({ id: d._id })}
-              />
-            ))}
-          </div>
-          {upcoming.length === 0 && overdue.length === 0 && (
-            <div className="rounded-xl border border-dashed p-8 text-center">
-              <Calendar className="mx-auto size-10 text-muted-foreground/30" />
-              <p className="mt-3 text-sm font-medium text-muted-foreground">
-                No upcoming deadlines
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground/70">
-                Add deadlines to track your important dates
-              </p>
-            </div>
-          )}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+              >
+                <Card className="border-border/60">
+                  <CardContent className="flex items-center gap-5 p-5">
+                    {/* Left color bar */}
+                    <div
+                      className={`h-14 w-1 shrink-0 rounded-full ${
+                        isPast ? "bg-red-500" : isUrgent ? "bg-amber-500" : "bg-muted-foreground/20"
+                      }`}
+                    />
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold">{d.name}</h3>
+                        <Badge className={`${d.statusColor} border-0 text-[10px]`}>
+                          {d.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{d.course}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-4 text-xs">
+                        <span>
+                          <span className="text-muted-foreground">DEADLINE: </span>
+                          <span className={`font-medium ${isUrgent ? "text-amber-500" : isPast ? "text-red-500" : ""}`}>
+                            {d.deadline}
+                          </span>
+                        </span>
+                        {d.examDate && (
+                          <span>
+                            <span className="text-muted-foreground">EXAM: </span>
+                            <span className="font-medium">{d.examDate}</span>
+                          </span>
+                        )}
+                        {d.verified && (
+                          <span>
+                            <span className="text-muted-foreground">VERIFIED: </span>
+                            <span className="font-medium">{d.verified}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Days left */}
+                    <div className="text-right shrink-0">
+                      <p className={`text-3xl font-bold ${
+                        isPast ? "text-red-500" : isUrgent ? "text-amber-500" : "text-foreground"
+                      }`}>
+                        {Math.max(0, daysUntil)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">days left</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {d.saved ? (
+                        <Button variant="outline" size="sm" className="gap-1 text-xs">
+                          <CheckCircle2 className="size-3" /> Saved
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" className="gap-1 text-xs">
+                          + Save
+                        </Button>
+                      )}
+                      {d.sourceUrl && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-xs text-muted-foreground"
+                          onClick={() => window.open(d.sourceUrl, "_blank")}
+                        >
+                          Source ↗
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* Completed */}
-        {completed.length > 0 && (
-          <div>
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-              <CheckCircle2 className="size-4" />
-              Completed ({completed.length})
-            </h2>
-            <div className="space-y-2 opacity-60">
-              {completed.map((d) => (
-                <DeadlineItem
-                  key={d._id}
-                  deadline={d}
-                  onToggle={() => toggleDeadline({ id: d._id })}
-                />
-              ))}
-            </div>
+        {sorted.length === 0 && (
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <Calendar className="mx-auto size-10 text-muted-foreground/30" />
+            <p className="mt-3 text-sm font-medium text-muted-foreground">
+              No upcoming deadlines
+            </p>
           </div>
         )}
       </motion.div>
-    </div>
-  );
-}
-
-function DeadlineItem({
-  deadline,
-  onToggle,
-}: {
-  deadline: any;
-  onToggle: () => void;
-}) {
-  const config = PRIORITY_CONFIG[deadline.priority] || PRIORITY_CONFIG.medium;
-
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-lg border p-3 transition-all ${
-        deadline.isCompleted ? "opacity-60" : ""
-      } ${
-        !deadline.isCompleted && deadline.daysUntil <= 3 && deadline.daysUntil >= 0
-          ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20"
-          : ""
-      }`}
-    >
-      <button
-        onClick={onToggle}
-        className={`size-5 shrink-0 rounded-full border-2 transition-all ${
-          deadline.isCompleted
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-muted-foreground/30 hover:border-primary"
-        } flex items-center justify-center`}
-      >
-        {deadline.isCompleted && <CheckCircle2 className="size-3" />}
-      </button>
-
-      <div className="min-w-0 flex-1">
-        <p
-          className={`text-sm font-medium ${
-            deadline.isCompleted ? "line-through" : ""
-          }`}
-        >
-          {deadline.title}
-        </p>
-        <p className="text-xs text-muted-foreground">{deadline.date}</p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {!deadline.isCompleted && deadline.daysUntil >= 0 && (
-          <span className="text-xs text-muted-foreground">
-            {deadline.daysUntil}d left
-          </span>
-        )}
-        {!deadline.isCompleted && deadline.daysUntil < 0 && (
-          <span className="text-xs font-medium text-red-500">Overdue</span>
-        )}
-        <Badge variant="outline" className="text-[10px] capitalize">
-          {deadline.type}
-        </Badge>
-        <Badge className={`text-[10px] ${config.color}`}>
-          {config.label}
-        </Badge>
-      </div>
     </div>
   );
 }
