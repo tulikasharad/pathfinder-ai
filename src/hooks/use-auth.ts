@@ -22,6 +22,10 @@ interface UserProfile {
     isMinority?: boolean;
     isFirstGeneration?: boolean;
     otherCriteria?: string;
+    city?: string;
+    specialization?: string;
+    hostelRequired?: boolean;
+    scholarshipRequired?: boolean;
   };
 }
 
@@ -42,13 +46,38 @@ export function useAuth() {
   // ── Profile helpers ────────────────────────────────────────────────────────
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", userId)
       .maybeSingle();
 
+    if (error) {
+      console.error("[fetchProfile] Supabase error:", error.message, error.details, error.hint);
+      return null;
+    }
     if (!data) return null;
+
+    // Build studentProfile from ANY available data — don't gate on age
+    const sp: NonNullable<UserProfile["studentProfile"]> = {};
+    if (data.age != null) sp.age = data.age;
+    if (data.state) sp.state = data.state;
+    if (data.gender) sp.gender = data.gender;
+    if (data.annual_family_income != null) sp.annualFamilyIncome = data.annual_family_income;
+    if (data.category) sp.category = data.category;
+    if (data.education_level) sp.educationLevel = data.education_level;
+    if (data.school_type) sp.schoolType = data.school_type;
+    if (data.course) sp.course = data.course;
+    if (data.institution_type) sp.institutionType = data.institution_type;
+    if (data.academic_score != null) sp.academicScore = data.academic_score;
+    if (data.is_disabled != null) sp.isDisabled = data.is_disabled;
+    if (data.is_minority != null) sp.isMinority = data.is_minority;
+    if (data.is_first_generation != null) sp.isFirstGeneration = data.is_first_generation;
+    if (data.other_criteria) sp.otherCriteria = data.other_criteria;
+    if (data.city) sp.city = data.city;
+    if (data.specialization) sp.specialization = data.specialization;
+    if (data.hostel_required != null) sp.hostelRequired = data.hostel_required;
+    if (data.scholarship_required != null) sp.scholarshipRequired = data.scholarship_required;
 
     return {
       _id: data.id,
@@ -56,25 +85,8 @@ export function useAuth() {
       email: data.email,
       image: data.image,
       onboardingCompleted: data.onboarding_completed,
-      studentProfile:
-        data.age != null
-          ? {
-              age: data.age,
-              state: data.state,
-              gender: data.gender,
-              annualFamilyIncome: data.annual_family_income,
-              category: data.category,
-              educationLevel: data.education_level,
-              schoolType: data.school_type,
-              course: data.course,
-              institutionType: data.institution_type,
-              academicScore: data.academic_score,
-              isDisabled: data.is_disabled,
-              isMinority: data.is_minority,
-              isFirstGeneration: data.is_first_generation,
-              otherCriteria: data.other_criteria,
-            }
-          : undefined,
+      // Only set studentProfile if there's at least some profile data
+      studentProfile: Object.keys(sp).length > 0 ? sp : undefined,
     } as UserProfile;
   }, []);
 
@@ -104,7 +116,7 @@ export function useAuth() {
         return existing;
       }
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .upsert(
           {
@@ -118,6 +130,10 @@ export function useAuth() {
         .select()
         .single();
 
+      if (error) {
+        console.error("[ensureProfile] Supabase error:", error.message);
+        return null;
+      }
       if (!data) return null;
 
       return {
@@ -141,8 +157,6 @@ export function useAuth() {
       // Check for password recovery tokens in the URL hash
       const hash = window.location.hash;
       if (hash.includes("type=recovery") || hash.includes("access_token")) {
-        // This is a password recovery link — wait for onAuthStateChange
-        // to process the tokens. Don't set loading to false yet.
         return;
       }
 
@@ -171,7 +185,6 @@ export function useAuth() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "PASSWORD_RECOVERY") {
-        // User clicked the reset-password link — show new password form
         if (mounted) {
           setAuthView("reset-password");
           setIsLoading(false);
@@ -247,7 +260,6 @@ export function useAuth() {
         password: args.password,
       });
       if (error) throw error;
-      // Session is set automatically; onAuthStateChange handles the rest
     },
     []
   );

@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
 import { CheckCircle2, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +14,7 @@ const DEMO_PROFILE = {
   category: "General",
   state: "Maharashtra",
   city: "Mumbai",
+  age: "18",
   twelfthPercentage: "87",
   studentType: "12th",
   preferredCourse: "B.Tech CSE",
@@ -30,6 +30,8 @@ const DEMO_PROFILE = {
   pendingSections: ["Entrance exams", "Documents"],
 };
 
+type FormState = typeof DEMO_PROFILE;
+
 function ProfileLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -38,23 +40,31 @@ function ProfileLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, value, isEditing, onChange }: {
+/** A profile field that shows read-only text or an editable input. */
+function Field({
+  label,
+  displayValue,
+  formKey,
+  isEditing,
+  onChange,
+}: {
   label: string;
-  value: string;
+  displayValue: string;
+  formKey: string;
   isEditing: boolean;
-  onChange?: (v: string) => void;
+  onChange: (key: string, value: string) => void;
 }) {
   return (
     <div>
       <ProfileLabel>{label}</ProfileLabel>
-      {isEditing && onChange !== undefined ? (
+      {isEditing ? (
         <Input
           className="mt-1"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={displayValue}
+          onChange={(e) => onChange(formKey, e.target.value)}
         />
       ) : (
-        <p className="mt-1 text-base font-medium">{value || "—"}</p>
+        <p className="mt-1 text-base font-medium">{displayValue || "—"}</p>
       )}
     </div>
   );
@@ -65,46 +75,35 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Editable form state
-  const [form, setForm] = useState({
-    name: "",
-    gender: "",
-    category: "",
-    state: "",
-    city: "",
-    twelfthPercentage: "",
-    studentType: "",
-    preferredCourse: "",
-    specialization: "",
-    annualFamilyIncome: "",
-    hostelRequired: "Yes",
-    scholarshipRequired: "Yes",
-  });
+  // Editable form state — starts as DEMO_PROFILE values
+  const [form, setForm] = useState<FormState>({ ...DEMO_PROFILE });
 
+  const setField = useCallback((key: string, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  // Derive the display profile from user data or DEMO_PROFILE
   const profile = useMemo(() => {
-    if (user?.studentProfile?.age) {
+    const sp = user?.studentProfile;
+    if (sp) {
+      // Build profile from whatever data exists — don't require age
       return {
-        name: user.name || "Student",
-        email: user.email || "guest@collegepath",
-        gender: user.studentProfile.gender || "—",
-        category: user.studentProfile.category || "—",
-        state: user.studentProfile.state || "—",
-        city: "—",
-        twelfthPercentage: user.studentProfile.academicScore
-          ? String(user.studentProfile.academicScore)
-          : "—",
-        studentType: user.studentProfile.educationLevel || "—",
-        preferredCourse: user.studentProfile.course || "—",
-        specialization: "—",
-        annualFamilyIncome: user.studentProfile.annualFamilyIncome
-          ? String(user.studentProfile.annualFamilyIncome)
-          : "—",
-        hostelRequired: "—",
-        scholarshipRequired: "Yes",
-        preferredCities: ["Pune", "Bangalore", "Hyderabad", "Chennai"],
-        annualFeeBudget: user.studentProfile.annualFamilyIncome
-          ? String(user.studentProfile.annualFamilyIncome)
-          : "—",
+        name: user.name || DEMO_PROFILE.name,
+        email: user.email || DEMO_PROFILE.email,
+        age: sp.age != null ? String(sp.age) : DEMO_PROFILE.age,
+        gender: sp.gender || DEMO_PROFILE.gender,
+        category: sp.category || DEMO_PROFILE.category,
+        state: sp.state || DEMO_PROFILE.state,
+        city: sp.city || DEMO_PROFILE.city,
+        twelfthPercentage: sp.academicScore != null ? String(sp.academicScore) : DEMO_PROFILE.twelfthPercentage,
+        studentType: sp.educationLevel || DEMO_PROFILE.studentType,
+        preferredCourse: sp.course || DEMO_PROFILE.preferredCourse,
+        specialization: sp.specialization || DEMO_PROFILE.specialization,
+        annualFamilyIncome: sp.annualFamilyIncome != null ? String(sp.annualFamilyIncome) : DEMO_PROFILE.annualFamilyIncome,
+        hostelRequired: sp.hostelRequired != null ? (sp.hostelRequired ? "Yes" : "No") : DEMO_PROFILE.hostelRequired,
+        scholarshipRequired: sp.scholarshipRequired != null ? (sp.scholarshipRequired ? "Yes" : "No") : DEMO_PROFILE.scholarshipRequired,
+        preferredCities: DEMO_PROFILE.preferredCities,
+        annualFeeBudget: sp.annualFamilyIncome != null ? String(sp.annualFamilyIncome) : DEMO_PROFILE.annualFeeBudget,
         profileStatus: "Active",
         completionPercent: user.onboardingCompleted ? 100 : 50,
         completedSections: ["Personal info", "Academic details"],
@@ -114,63 +113,83 @@ export default function Profile() {
     return DEMO_PROFILE;
   }, [user]);
 
-  // Sync form when entering edit mode
   const startEditing = useCallback(() => {
+    // Copy ALL current profile values into form
     setForm({
-      name: profile.name === "—" ? "" : profile.name,
-      gender: profile.gender === "—" ? "" : profile.gender,
-      category: profile.category === "—" ? "" : profile.category,
-      state: profile.state === "—" ? "" : profile.state,
-      city: profile.city === "—" ? "" : profile.city,
-      twelfthPercentage: profile.twelfthPercentage === "—" ? "" : profile.twelfthPercentage,
-      studentType: profile.studentType === "—" ? "" : profile.studentType,
-      preferredCourse: profile.preferredCourse === "—" ? "" : profile.preferredCourse,
-      specialization: profile.specialization === "—" ? "" : profile.specialization,
-      annualFamilyIncome: profile.annualFamilyIncome === "—" ? "" : profile.annualFamilyIncome,
-      hostelRequired: profile.hostelRequired || "Yes",
-      scholarshipRequired: profile.scholarshipRequired || "Yes",
+      name: profile.name,
+      email: profile.email,
+      age: profile.age,
+      gender: profile.gender,
+      category: profile.category,
+      state: profile.state,
+      city: profile.city,
+      twelfthPercentage: profile.twelfthPercentage,
+      studentType: profile.studentType,
+      preferredCourse: profile.preferredCourse,
+      specialization: profile.specialization,
+      annualFamilyIncome: profile.annualFamilyIncome,
+      hostelRequired: profile.hostelRequired,
+      scholarshipRequired: profile.scholarshipRequired,
+      preferredCities: profile.preferredCities,
+      annualFeeBudget: profile.annualFeeBudget,
+      profileStatus: profile.profileStatus,
+      completionPercent: profile.completionPercent,
+      completedSections: profile.completedSections,
+      pendingSections: profile.pendingSections,
     });
     setIsEditing(true);
   }, [profile]);
 
-  const stopEditing = useCallback(() => {
-    setIsEditing(false);
-  }, []);
-
   const handleSave = useCallback(async () => {
-    if (!user?._id) return;
+    if (!user?._id) {
+      toast.error("Not authenticated. Please sign in again.");
+      return;
+    }
+
     setIsSaving(true);
     try {
+      // Only send columns that exist in the profiles table (see migration 001 + 002)
       const updates: Record<string, unknown> = {
-        name: form.name,
+        name: form.name || null,
         gender: form.gender || null,
         category: form.category || null,
         state: form.state || null,
+        city: form.city || null,
         education_level: form.studentType || null,
         course: form.preferredCourse || null,
-        academic_score: form.twelfthPercentage ? Number(form.twelfthPercentage) : null,
-        annual_family_income: form.annualFamilyIncome ? Number(form.annualFamilyIncome) : null,
+        specialization: form.specialization || null,
+        academic_score: form.twelfthPercentage ? Number(form.twelfthPercentage) || null : null,
+        annual_family_income: form.annualFamilyIncome ? Number(form.annualFamilyIncome) || null : null,
+        age: form.age ? Number(form.age) || null : null,
+        hostel_required: form.hostelRequired === "Yes",
+        scholarship_required: form.scholarshipRequired === "Yes",
         onboarding_completed: true,
       };
 
-      const { error } = await supabase
+      console.log("[Profile save] Sending to Supabase:", updates);
+
+      const { data, error } = await supabase
         .from("profiles")
         .update(updates)
-        .eq("id", user._id);
+        .eq("id", user._id)
+        .select()
+        .single();
 
       if (error) {
-        console.error("Profile update error:", error);
-        toast.error("Failed to save profile. Please try again.");
+        console.error("[Profile save] Supabase error:", error.message, error.details, error.hint);
+        toast.error(`Save failed: ${error.message}`);
         return;
       }
 
-      // Refresh profile from DB
+      console.log("[Profile save] Updated row:", data);
+
+      // Refresh profile from DB to reflect changes
       await refreshProfile();
       setIsEditing(false);
       toast.success("Profile updated successfully!");
     } catch (err) {
-      console.error("Profile save error:", err);
-      toast.error("An unexpected error occurred.");
+      console.error("[Profile save] Unexpected error:", err);
+      toast.error("An unexpected error occurred while saving.");
     } finally {
       setIsSaving(false);
     }
@@ -193,7 +212,7 @@ export default function Profile() {
           <div className="flex gap-2">
             {isEditing ? (
               <>
-                <Button variant="outline" onClick={stopEditing} disabled={isSaving}>
+                <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
                   Cancel
                 </Button>
                 <Button onClick={handleSave} disabled={isSaving}>
@@ -215,12 +234,12 @@ export default function Profile() {
             <div className="rounded-xl border border-border/60 bg-card p-6">
               <ProfileLabel>Personal Information</ProfileLabel>
               <div className="mt-4 grid grid-cols-2 gap-6">
-                <Field label="Full Name" value={form.name || profile.name} isEditing={isEditing} onChange={(v) => setForm({ ...form, name: v })} />
-                <Field label="Email" value={profile.email} isEditing={false} />
-                <Field label="Gender" value={form.gender || profile.gender} isEditing={isEditing} onChange={(v) => setForm({ ...form, gender: v })} />
-                <Field label="Category" value={form.category || profile.category} isEditing={isEditing} onChange={(v) => setForm({ ...form, category: v })} />
-                <Field label="State" value={form.state || profile.state} isEditing={isEditing} onChange={(v) => setForm({ ...form, state: v })} />
-                <Field label="City" value={form.city || profile.city} isEditing={isEditing} onChange={(v) => setForm({ ...form, city: v })} />
+                <Field label="Full Name" displayValue={isEditing ? form.name : profile.name} formKey="name" isEditing={isEditing} onChange={setField} />
+                <Field label="Email" displayValue={profile.email} formKey="email" isEditing={false} onChange={setField} />
+                <Field label="Age" displayValue={isEditing ? form.age : profile.age} formKey="age" isEditing={isEditing} onChange={setField} />
+                <Field label="Gender" displayValue={isEditing ? form.gender : profile.gender} formKey="gender" isEditing={isEditing} onChange={setField} />
+                <Field label="Category" displayValue={isEditing ? form.category : profile.category} formKey="category" isEditing={isEditing} onChange={setField} />
+                <Field label="State" displayValue={isEditing ? form.state : profile.state} formKey="state" isEditing={isEditing} onChange={setField} />
               </div>
             </div>
 
@@ -228,10 +247,10 @@ export default function Profile() {
             <div className="rounded-xl border border-border/60 bg-card p-6">
               <ProfileLabel>Academic Details</ProfileLabel>
               <div className="mt-4 grid grid-cols-2 gap-6">
-                <Field label="12th Percentage" value={form.twelfthPercentage || profile.twelfthPercentage} isEditing={isEditing} onChange={(v) => setForm({ ...form, twelfthPercentage: v })} />
-                <Field label="Student Type" value={form.studentType || profile.studentType} isEditing={isEditing} onChange={(v) => setForm({ ...form, studentType: v })} />
-                <Field label="Preferred Course" value={form.preferredCourse || profile.preferredCourse} isEditing={isEditing} onChange={(v) => setForm({ ...form, preferredCourse: v })} />
-                <Field label="Specialization" value={form.specialization || profile.specialization} isEditing={isEditing} onChange={(v) => setForm({ ...form, specialization: v })} />
+                <Field label="12th Percentage" displayValue={isEditing ? form.twelfthPercentage : profile.twelfthPercentage} formKey="twelfthPercentage" isEditing={isEditing} onChange={setField} />
+                <Field label="Student Type" displayValue={isEditing ? form.studentType : profile.studentType} formKey="studentType" isEditing={isEditing} onChange={setField} />
+                <Field label="Preferred Course" displayValue={isEditing ? form.preferredCourse : profile.preferredCourse} formKey="preferredCourse" isEditing={isEditing} onChange={setField} />
+                <Field label="Specialization" displayValue={isEditing ? form.specialization : profile.specialization} formKey="specialization" isEditing={isEditing} onChange={setField} />
               </div>
             </div>
 
@@ -239,9 +258,9 @@ export default function Profile() {
             <div className="rounded-xl border border-border/60 bg-card p-6">
               <ProfileLabel>Financial Preferences</ProfileLabel>
               <div className="mt-4 grid grid-cols-2 gap-6">
-                <Field label="Annual Family Income" value={form.annualFamilyIncome || profile.annualFamilyIncome} isEditing={isEditing} onChange={(v) => setForm({ ...form, annualFamilyIncome: v })} />
-                <Field label="Hostel Required" value={form.hostelRequired} isEditing={isEditing} onChange={(v) => setForm({ ...form, hostelRequired: v })} />
-                <Field label="Scholarship Required" value={form.scholarshipRequired} isEditing={isEditing} onChange={(v) => setForm({ ...form, scholarshipRequired: v })} />
+                <Field label="Annual Family Income" displayValue={isEditing ? form.annualFamilyIncome : profile.annualFamilyIncome} formKey="annualFamilyIncome" isEditing={isEditing} onChange={setField} />
+                <Field label="Hostel Required" displayValue={isEditing ? form.hostelRequired : profile.hostelRequired} formKey="hostelRequired" isEditing={isEditing} onChange={setField} />
+                <Field label="Scholarship Required" displayValue={isEditing ? form.scholarshipRequired : profile.scholarshipRequired} formKey="scholarshipRequired" isEditing={isEditing} onChange={setField} />
               </div>
             </div>
           </div>
