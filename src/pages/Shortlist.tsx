@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
+import { calculateMatchScore } from "@/lib/match-score";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,7 +86,7 @@ async function fetchDreamCollegesForShortlist(args: { userId?: string }) {
       course: c.courses?.[0] || "B.Tech CSE",
       status: "In Progress",
       statusColor: "bg-primary/15 text-primary",
-      match: c.ranking ? Math.max(70, 100 - (c.ranking || 50) + 10) : 85,
+      match: 0, // computed at render time with profile data
     };
   });
 }
@@ -137,9 +138,21 @@ export default function Shortlist() {
   const [showCompare, setShowCompare] = useState(false);
 
   const displayColleges = useMemo(() => {
-    if (dreamColleges && dreamColleges.length > 0) return dreamColleges;
-    return DEMO_COLLEGES;
-  }, [dreamColleges]);
+    const raw = dreamColleges && dreamColleges.length > 0 ? dreamColleges : DEMO_COLLEGES;
+    return raw.map((c) => ({
+      ...c,
+      match: calculateMatchScore(user?.studentProfile, {
+        ranking: c.ranking,
+        courses: c.courses,
+        state: c.state,
+        location: c.location,
+        fees: typeof c.fees === 'string' ? c.fees : undefined,
+        entranceExams: c.entranceExams,
+        scholarshipsAvailable: c.scholarshipsAvailable,
+        eligibility: c.eligibility,
+      }),
+    }));
+  }, [dreamColleges, user?.studentProfile]);
 
   const filtered = useMemo(() => {
     let results = displayColleges;

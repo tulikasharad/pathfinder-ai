@@ -30,23 +30,12 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { calculateMatchScore, classifyMatch, parseFee } from "@/lib/match-score";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 12 },
   show: { opacity: 1, y: 0 },
 };
-
-/** Parse a fee string like "₹2.2L" into a numeric value for comparison. */
-function parseFee(feeStr: string | null): number {
-  if (!feeStr) return 0;
-  const cleaned = feeStr.replace(/[₹,\s]/g, "").toLowerCase();
-  const num = parseFloat(cleaned);
-  if (isNaN(num)) return 0;
-  if (cleaned.includes("l")) return num * 100000;
-  if (cleaned.includes("k")) return num * 1000;
-  if (cleaned.includes("cr")) return num * 10000000;
-  return num;
-}
 
 interface AdvancedFilters {
   scholarshipAvailable: boolean;
@@ -83,6 +72,8 @@ const MAX_FEE_MAP: Record<string, number> = {
 
 const COMMON_EXAMS = ["JEE Main", "BITSAT", "VITEEE", "SRMJEEE", "MHT-CET", "COMEDK"];
 const COMMON_COURSES = ["B.Tech CSE", "B.Tech ECE", "B.Tech ME", "B.E. CSE", "BCA", "B.Sc"];
+
+// Match scoring imported from @/lib/match-score
 
 // ── Data fetchers ────────────────────────────────────────────────────────────
 
@@ -185,7 +176,7 @@ export default function CollegeDiscovery() {
   // fetchVersion forces useQuery to re-fetch after each toggle
   const fetchVersionRef = useRef(0);
   const [fetchVersion, setFetchVersion] = useState(0);
-  const dreamColleges = useQuery(fetchDreamColleges, { userId: user?._id, v: fetchVersion });
+  const dreamColleges = useQuery(fetchDreamColleges, { userId: user?._id ?? null, v: fetchVersion });
   const toggleDreamCollege = useMutation(toggleDreamCollegeOp);
 
   // Basic filters
@@ -578,9 +569,9 @@ export default function CollegeDiscovery() {
                       </div>
                       <div className="text-right">
                         <p className="text-3xl font-bold text-primary">
-                          {college.ranking ? Math.max(70, 100 - (college.ranking || 50) + 10) : 85}%
+                          {calculateMatchScore(user?.studentProfile, college)}%
                         </p>
-                        <p className="text-xs text-muted-foreground">Match</p>
+                        <p className="text-xs text-muted-foreground">{classifyMatch(calculateMatchScore(user?.studentProfile, college))}</p>
                       </div>
                     </div>
 
