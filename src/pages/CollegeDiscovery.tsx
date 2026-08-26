@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import {
   GraduationCap,
   ExternalLink,
   Heart,
-  HeartOff,
   Star,
   Filter,
   ArrowUpDown,
@@ -34,14 +33,69 @@ const fadeUp = {
   show: { opacity: 1, y: 0 },
 };
 
+async function fetchColleges() {
+  const { data } = await supabase.from("colleges").select("*");
+  return (data ?? []).map((r) => ({
+    _id: r.id,
+    name: r.name,
+    location: r.location,
+    state: r.state,
+    courses: r.courses ?? [],
+    entranceExams: r.entrance_exams ?? [],
+    fees: r.fees,
+    eligibility: r.eligibility,
+    applicationDeadline: r.application_deadline,
+    scholarshipsAvailable: r.scholarships_available ?? [],
+    officialUrl: r.official_url,
+    isVerified: r.is_verified,
+    description: r.description,
+    imageUrl: r.image_url,
+    ranking: r.ranking,
+  }));
+}
+
+async function fetchBookmarks(args: { userId?: string }) {
+  if (!args.userId) return [];
+  const { data } = await supabase
+    .from("bookmarks")
+    .select("*")
+    .eq("student_id", args.userId)
+    .eq("item_type", "college");
+  return (data ?? []).map((r) => ({
+    _id: r.id,
+    userId: r.student_id,
+    itemType: r.item_type,
+    itemId: r.item_id,
+  }));
+}
+
+async function toggleBookmarkOp(args: { userId: string; itemType: string; itemId: string }) {
+  const { data: existing } = await supabase
+    .from("bookmarks")
+    .select("id")
+    .eq("student_id", args.userId)
+    .eq("item_type", args.itemType)
+    .eq("item_id", args.itemId)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase.from("bookmarks").delete().eq("id", existing.id);
+    return { bookmarked: false };
+  }
+
+  await supabase.from("bookmarks").insert({
+    student_id: args.userId,
+    item_type: args.itemType,
+    item_id: args.itemId,
+  });
+  return { bookmarked: true };
+}
+
 export default function CollegeDiscovery() {
   const { user } = useAuth();
-  const colleges = useQuery(api.scholarships.listColleges);
-  const bookmarks = useQuery(
-    api.scholarships.listBookmarks,
-    user ? { userId: user._id } : "skip"
-  );
-  const toggleBookmark = useMutation(api.scholarships.toggleBookmark);
+  const colleges = useQuery(fetchColleges);
+  const bookmarks = useQuery(fetchBookmarks, { userId: user?._id });
+  const toggleBookmark = useMutation(toggleBookmarkOp);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterState, setFilterState] = useState("all");
@@ -49,10 +103,7 @@ export default function CollegeDiscovery() {
   const [selectedCollege, setSelectedCollege] = useState<any>(null);
 
   const shortlistedIds = useMemo(
-    () =>
-      new Set(
-        bookmarks?.filter((b) => b.itemType === "college").map((b) => b.itemId) || []
-      ),
+    () => new Set(bookmarks?.map((b) => b.itemId) || []),
     [bookmarks]
   );
 
@@ -66,7 +117,7 @@ export default function CollegeDiscovery() {
         (c) =>
           c.name.toLowerCase().includes(q) ||
           c.location.toLowerCase().includes(q) ||
-          c.courses.some((course) => course.toLowerCase().includes(q))
+          c.courses.some((course: string) => course.toLowerCase().includes(q))
       );
     }
 
@@ -108,7 +159,6 @@ export default function CollegeDiscovery() {
         animate="show"
         className="mx-auto max-w-6xl space-y-6"
       >
-        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Discover opportunities</h1>
           <p className="mt-1 text-muted-foreground">
@@ -116,7 +166,6 @@ export default function CollegeDiscovery() {
           </p>
         </div>
 
-        {/* Search & Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -144,7 +193,6 @@ export default function CollegeDiscovery() {
           </Button>
         </div>
 
-        {/* Profile Tags */}
         <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="text-primary">👤</span> Based on your profile:
@@ -157,10 +205,8 @@ export default function CollegeDiscovery() {
           <span className="ml-auto text-sm font-bold text-primary">{filtered.length} MATCHES</span>
         </div>
 
-        {/* Section Title */}
         <h2 className="text-lg font-bold">Colleges for your path</h2>
 
-        {/* College Cards */}
         <div className="space-y-4">
           {filtered.map((college, idx) => {
             const isShortlisted = shortlistedIds.has(college._id);
@@ -178,7 +224,6 @@ export default function CollegeDiscovery() {
               >
                 <Card className="group border-border/60 transition-all hover:border-primary/30 hover:shadow-md">
                   <CardContent className="p-5">
-                    {/* Top Row: Verified + Status Badge */}
                     <div className="flex items-center gap-2 mb-2">
                       {college.isVerified && (
                         <span className="flex items-center gap-1 text-xs text-emerald-400">
@@ -191,7 +236,6 @@ export default function CollegeDiscovery() {
                       </Badge>
                     </div>
 
-                    {/* Name + Match */}
                     <div className="flex items-start justify-between">
                       <div>
                         <h3 className="text-base font-bold">{college.name}</h3>
@@ -207,7 +251,6 @@ export default function CollegeDiscovery() {
                       </div>
                     </div>
 
-                    {/* Stats Row */}
                     <div className="mt-4 flex flex-wrap items-center gap-6 text-sm">
                       <div>
                         <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">NIRF</p>
@@ -237,17 +280,14 @@ export default function CollegeDiscovery() {
                       </div>
                     </div>
 
-                    {/* Bottom Row */}
                     <div className="mt-4 flex items-center justify-between border-t pt-4">
                       <span className="flex items-center gap-1 text-xs text-emerald-400">
                         <CheckCircle2 className="size-3" />
                         Eligible
                       </span>
                       <div className="flex items-center gap-3">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-9"
+                        <button
+                          className="size-9 inline-flex items-center justify-center rounded-md hover:bg-accent transition-colors"
                           onClick={() => handleToggleBookmark(college._id)}
                         >
                           {isShortlisted ? (
@@ -255,7 +295,7 @@ export default function CollegeDiscovery() {
                           ) : (
                             <Heart className="size-5 text-muted-foreground" />
                           )}
-                        </Button>
+                        </button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -276,16 +316,11 @@ export default function CollegeDiscovery() {
         {filtered.length === 0 && (
           <div className="rounded-xl border border-dashed p-12 text-center">
             <GraduationCap className="mx-auto size-12 text-muted-foreground/30" />
-            <p className="mt-4 text-sm font-medium text-muted-foreground">
-              No colleges found
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              Try adjusting your search or filters
-            </p>
+            <p className="mt-4 text-sm font-medium text-muted-foreground">No colleges found</p>
+            <p className="mt-1 text-xs text-muted-foreground/70">Try adjusting your search or filters</p>
           </div>
         )}
 
-        {/* Detail Dialog */}
         <AnimatePresence>
           {selectedCollege && (
             <motion.div
@@ -379,5 +414,3 @@ export default function CollegeDiscovery() {
     </div>
   );
 }
-
-

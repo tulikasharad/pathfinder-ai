@@ -3,8 +3,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, Suspense, lazy, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -85,8 +83,6 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
-
 function RouteSyncer() {
   const location = useLocation();
   useEffect(() => {
@@ -132,86 +128,84 @@ createRoot(document.getElementById("root")!).render(
         <VlyToolbar />
       </ToolbarErrorBoundary>
       <ThemeProvider>
-        <ConvexAuthProvider client={convex}>
-          <BrowserRouter>
-            <RouteSyncer />
-            <Suspense fallback={<RouteLoading />}>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route
-                  path="/auth"
-                  element={<AuthPage redirectAfterAuth="/dashboard" />}
-                />
-                <Route
-                  path="/dashboard"
-                  element={
-                    <AuthenticatedLayout>
-                      <Dashboard />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/discover"
-                  element={
-                    <AuthenticatedLayout>
-                      <CollegeDiscovery />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/shortlist"
-                  element={
-                    <AuthenticatedLayout>
-                      <Shortlist />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/applications"
-                  element={
-                    <AuthenticatedLayout>
-                      <Applications />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/deadlines"
-                  element={
-                    <AuthenticatedLayout>
-                      <Deadlines />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/scholarships"
-                  element={
-                    <AuthenticatedLayout>
-                      <ScholarshipNavigator />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/notifications"
-                  element={
-                    <AuthenticatedLayout>
-                      <Notifications />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route
-                  path="/profile"
-                  element={
-                    <AuthenticatedLayout>
-                      <Profile />
-                    </AuthenticatedLayout>
-                  }
-                />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </BrowserRouter>
-          <Toaster />
-        </ConvexAuthProvider>
+        <BrowserRouter>
+          <RouteSyncer />
+          <Suspense fallback={<RouteLoading />}>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route
+                path="/auth"
+                element={<AuthPage redirectAfterAuth="/dashboard" />}
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <AuthenticatedLayout>
+                    <Dashboard />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/discover"
+                element={
+                  <AuthenticatedLayout>
+                    <CollegeDiscovery />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/shortlist"
+                element={
+                  <AuthenticatedLayout>
+                    <Shortlist />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/applications"
+                element={
+                  <AuthenticatedLayout>
+                    <Applications />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/deadlines"
+                element={
+                  <AuthenticatedLayout>
+                    <Deadlines />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/scholarships"
+                element={
+                  <AuthenticatedLayout>
+                    <ScholarshipNavigator />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/notifications"
+                element={
+                  <AuthenticatedLayout>
+                    <Notifications />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <AuthenticatedLayout>
+                    <Profile />
+                  </AuthenticatedLayout>
+                }
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+        <Toaster />
       </ThemeProvider>
     </RootErrorBoundary>
   </StrictMode>

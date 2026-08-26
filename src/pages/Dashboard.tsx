@@ -1,18 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
 import {
-  ArrowRight,
-  Calendar,
-  GraduationCap,
   Target,
-  TrendingUp,
 } from "lucide-react";
 
 const stagger = {
@@ -29,6 +23,89 @@ function getDaysUntil(dateStr: string) {
   const date = new Date(dateStr);
   return Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+// ── Query helpers ─────────────────────────────────────────────────────────────
+
+async function fetchApplications(args: { userId?: string }) {
+  if (!args.userId) return [];
+  const { data } = await supabase
+    .from("applications")
+    .select("*")
+    .eq("student_id", args.userId);
+  return (data ?? []).map((r) => ({
+    _id: r.id,
+    userId: r.student_id,
+    name: r.name,
+    type: r.type,
+    status: r.status,
+    deadline: r.deadline,
+    course: r.course_id,
+  }));
+}
+
+async function fetchDeadlines(args: { userId?: string }) {
+  if (!args.userId) return [];
+  const { data } = await supabase
+    .from("deadlines")
+    .select("*")
+    .eq("student_id", args.userId);
+  return (data ?? []).map((r) => ({
+    _id: r.id,
+    userId: r.student_id,
+    title: r.title,
+    date: r.date,
+    type: r.type,
+    priority: r.priority,
+    isCompleted: r.is_completed,
+  }));
+}
+
+// ── Seed mutation ─────────────────────────────────────────────────────────────
+
+async function seedDemoData() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { seeded: false };
+
+  const { data: existing } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("student_id", user.id)
+    .limit(1);
+
+  if (existing && existing.length > 0) return { seeded: false };
+
+  await supabase.from("applications").insert([
+    {
+      student_id: user.id,
+      type: "college",
+      name: "Northstar Institute of Technology",
+      status: "started",
+      deadline: "2026-08-30",
+      phase: "Phase 1",
+      application_id: "NIT2026CS001247",
+    },
+    {
+      student_id: user.id,
+      type: "college",
+      name: "VIT University Vellore",
+      status: "started",
+      deadline: "2026-08-25",
+      phase: "Phase 1",
+      application_id: "VITEEE2026AI004512",
+    },
+  ]);
+
+  await supabase.from("deadlines").insert([
+    { student_id: user.id, title: "JEE Main registration", date: "2026-09-02", type: "exam", priority: "urgent", is_completed: false },
+    { student_id: user.id, title: "Pay application fee", date: "2026-09-02", type: "application", priority: "high", is_completed: false },
+    { student_id: user.id, title: "Upload 12th marksheet", date: "2026-08-27", type: "document", priority: "medium", is_completed: false },
+    { student_id: user.id, title: "BITS Pilani application", date: "2026-08-28", type: "application", priority: "medium", is_completed: false },
+  ]);
+
+  return { seeded: true };
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 const ACTIONS_DATA = [
   {
@@ -78,15 +155,9 @@ const DEADLINES_DATA = [
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const applications = useQuery(
-    api.scholarships.listApplications,
-    user ? { userId: user._id } : "skip"
-  );
-  const deadlines = useQuery(
-    api.scholarships.listDeadlines,
-    user ? { userId: user._id } : "skip"
-  );
-  const seedDemo = useMutation(api.scholarships.seedDemoData);
+  const applications = useQuery(fetchApplications, { userId: user?._id });
+  const deadlines = useQuery(fetchDeadlines, { userId: user?._id });
+  const seedDemo = useMutation(seedDemoData);
 
   useEffect(() => {
     seedDemo();
@@ -222,14 +293,12 @@ export default function Dashboard() {
                         <p className="mt-0.5 text-sm font-medium">{action.title}</p>
                         <p className="text-xs text-muted-foreground">{action.subtitle}</p>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 text-xs"
+                      <button
                         onClick={() => navigate(action.actionPath)}
+                        className="shrink-0 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent"
                       >
                         {action.actionLabel}
-                      </Button>
+                      </button>
                     </div>
                   ))}
                 </div>
