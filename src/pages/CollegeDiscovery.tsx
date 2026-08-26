@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
@@ -181,7 +181,11 @@ async function toggleDreamCollegeOp(args: { userId: string; collegeId: string })
 export default function CollegeDiscovery() {
   const { user } = useAuth();
   const colleges = useQuery(fetchColleges);
-  const dreamColleges = useQuery(fetchDreamColleges, { userId: user?._id });
+
+  // fetchVersion forces useQuery to re-fetch after each toggle
+  const fetchVersionRef = useRef(0);
+  const [fetchVersion, setFetchVersion] = useState(0);
+  const dreamColleges = useQuery(fetchDreamColleges, { userId: user?._id, v: fetchVersion });
   const toggleDreamCollege = useMutation(toggleDreamCollegeOp);
 
   // Basic filters
@@ -284,7 +288,11 @@ export default function CollegeDiscovery() {
           collegeId: collegeId,
         });
 
-        if (result.saved) {
+        // Force dream_colleges re-fetch so heart state updates immediately
+      fetchVersionRef.current += 1;
+      setFetchVersion(fetchVersionRef.current);
+
+      if (result.saved) {
           toast.success("College added to your Dream Colleges!");
         } else {
           toast.success("College removed from Dream Colleges.");
@@ -295,7 +303,7 @@ export default function CollegeDiscovery() {
         toast.error(message);
       }
     },
-    [user, toggleDreamCollege]
+    [user, toggleDreamCollege, fetchVersionRef]
   );
 
   // ── Helpers ──────────────────────────────────────────────────────────────
