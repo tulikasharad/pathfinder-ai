@@ -29,6 +29,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 12 },
@@ -52,7 +53,7 @@ interface AdvancedFilters {
   verifiedOnly: boolean;
   entranceExams: string[];
   courses: string[];
-  maxFee: string; // "any", "1L", "2L", "3L", "5L", "10L"
+  maxFee: string;
 }
 
 const EMPTY_FILTERS: AdvancedFilters = {
@@ -106,41 +107,73 @@ async function fetchColleges() {
   }));
 }
 
-async function fetchBookmarks(args: { userId?: string }) {
+/** Fetch dream colleges for the logged-in student from the dream_colleges table. */
+async function fetchDreamColleges(args: { userId?: string }) {
   if (!args.userId) return [];
-  const { data } = await supabase
-    .from("bookmarks")
-    .select("*")
-    .eq("student_id", args.userId)
-    .eq("item_type", "college");
+  const { data, error } = await supabase
+    .from("dream_colleges")
+    .select("id, college_id, student_id, priority, created_at")
+    .eq("student_id", args.userId);
+  if (error) {
+    console.error("[fetchDreamColleges] Error:", error.message, error.details);
+    return [];
+  }
   return (data ?? []).map((r) => ({
     _id: r.id,
-    userId: r.student_id,
-    itemType: r.item_type,
-    itemId: r.item_id,
+    collegeId: r.college_id,
+    studentId: r.student_id,
+    priority: r.priority,
+    createdAt: r.created_at,
   }));
 }
 
-async function toggleBookmarkOp(args: { userId: string; itemType: string; itemId: string }) {
-  const { data: existing } = await supabase
-    .from("bookmarks")
+/**
+ * Toggle a dream college record:
+ * - If the student already has this college → DELETE the record
+ * - If not → INSERT a new record
+ */
+async function toggleDreamCollegeOp(args: { userId: string; collegeId: string }) {
+  // Check for existing dream college record
+  const { data: existing, error: findError } = await supabase
+    .from("dream_colleges")
     .select("id")
     .eq("student_id", args.userId)
-    .eq("item_type", args.itemType)
-    .eq("item_id", args.itemId)
+    .eq("college_id", args.collegeId)
     .maybeSingle();
 
-  if (existing) {
-    await supabase.from("bookmarks").delete().eq("id", existing.id);
-    return { bookmarked: false };
+  if (findError) {
+    console.error("[toggleDreamCollege] Find error:", findError.message, findError.details);
+    throw new Error(`Failed to check dream college: ${findError.message}`);
   }
 
-  await supabase.from("bookmarks").insert({
-    student_id: args.userId,
-    item_type: args.itemType,
-    item_id: args.itemId,
-  });
-  return { bookmarked: true };
+  if (existing) {
+    // Remove from dream colleges
+    const { error: deleteError } = await supabase
+      .from("dream_colleges")
+      .delete()
+      .eq("id", existing.id);
+
+    if (deleteError) {
+      console.error("[toggleDreamCollege] Delete error:", deleteError.message, deleteError.details);
+      throw new Error(`Failed to remove dream college: ${deleteError.message}`);
+    }
+    return { saved: false };
+  }
+
+  // Add to dream colleges
+  const { error: insertError } = await supabase
+    .from("dream_colleges")
+    .insert({
+      student_id: args.userId,
+      college_id: args.collegeId,
+      priority: 0,
+    });
+
+  if (insertError) {
+    console.error("[toggleDreamCollege] Insert error:", insertError.message, insertError.details);
+    throw new Error(`Failed to save dream college: ${insertError.message}`);
+  }
+  return { saved: true };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -148,8 +181,8 @@ async function toggleBookmarkOp(args: { userId: string; itemType: string; itemId
 export default function CollegeDiscovery() {
   const { user } = useAuth();
   const colleges = useQuery(fetchColleges);
-  const bookmarks = useQuery(fetchBookmarks, { userId: user?._id });
-  const toggleBookmark = useMutation(toggleBookmarkOp);
+  const dreamColleges = useQuery(fetchDreamColleges, { userId: user?._id });
+  const toggleDreamCollege = useMutation(toggleDreamCollegeOp);
 
   // Basic filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -172,13 +205,18 @@ export default function CollegeDiscovery() {
     setAdv({ ...EMPTY_FILTERS });
   }, []);
 
+  /** Set of college IDs currently saved as dream colleges. */
+  const dreamCollegeIds = useMemo(
+    () => new Set(dreamColleges?.map((d) => d.collegeId) || []),
+    [dreamColleges]
+  );
+
   // ── Filter logic ─────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
     if (!colleges) return [];
     let results = [...colleges];
 
-    // Text search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       results = results.filter(
@@ -189,12 +227,10 @@ export default function CollegeDiscovery() {
       );
     }
 
-    // State filter
     if (filterState !== "all") {
       results = results.filter((c) => c.state === filterState);
     }
 
-    // Advanced: Max fee
     if (adv.maxFee !== "any") {
       const maxFeeValue = MAX_FEE_MAP[adv.maxFee];
       if (maxFeeValue) {
@@ -202,17 +238,14 @@ export default function CollegeDiscovery() {
       }
     }
 
-    // Advanced: Scholarship available
     if (adv.scholarshipAvailable) {
       results = results.filter((c) => c.scholarshipsAvailable.length > 0);
     }
 
-    // Advanced: Verified only
     if (adv.verifiedOnly) {
       results = results.filter((c) => c.isVerified);
     }
 
-    // Advanced: Entrance exams (show colleges that match ANY selected exam)
     if (adv.entranceExams.length > 0) {
       const lower = adv.entranceExams.map((e) => e.toLowerCase());
       results = results.filter((c) =>
@@ -220,7 +253,6 @@ export default function CollegeDiscovery() {
       );
     }
 
-    // Advanced: Courses (show colleges that match ANY selected course)
     if (adv.courses.length > 0) {
       const lower = adv.courses.map((c) => c.toLowerCase());
       results = results.filter((c) =>
@@ -228,7 +260,6 @@ export default function CollegeDiscovery() {
       );
     }
 
-    // Sort
     if (sortBy === "ranking") {
       results.sort((a, b) => (a.ranking || 99) - (b.ranking || 99));
     } else if (sortBy === "name") {
@@ -238,31 +269,42 @@ export default function CollegeDiscovery() {
     return results;
   }, [colleges, searchQuery, filterState, sortBy, adv]);
 
-  const shortlistedIds = useMemo(
-    () => new Set(bookmarks?.map((b) => b.itemId) || []),
-    [bookmarks]
+  // ── Heart toggle handler ─────────────────────────────────────────────────
+
+  const handleToggleDreamCollege = useCallback(
+    async (collegeId: string) => {
+      if (!user?._id) {
+        toast.error("Please sign in to save colleges.");
+        return;
+      }
+
+      try {
+        const result = await toggleDreamCollege({
+          userId: user._id,
+          collegeId: collegeId,
+        });
+
+        if (result.saved) {
+          toast.success("College added to your Dream Colleges!");
+        } else {
+          toast.success("College removed from Dream Colleges.");
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Something went wrong.";
+        console.error("[handleToggleDreamCollege] Error:", err);
+        toast.error(message);
+      }
+    },
+    [user, toggleDreamCollege]
   );
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  const handleToggleBookmark = useCallback(
-    async (id: string) => {
-      if (!user) return;
-      await toggleBookmark({
-        userId: user._id,
-        itemType: "college",
-        itemId: id,
-      });
-    },
-    [user, toggleBookmark]
-  );
 
   const uniqueStates = useMemo(() => {
     if (!colleges) return [];
     return [...new Set(colleges.map((c) => c.state))].sort();
   }, [colleges]);
 
-  // Collect all unique exams and courses from the data for filter options
   const allExams = useMemo(() => {
     if (!colleges) return COMMON_EXAMS;
     const found = new Set<string>();
@@ -279,14 +321,14 @@ export default function CollegeDiscovery() {
     return [...found].sort();
   }, [colleges]);
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
   const activeFilterCount =
     (adv.scholarshipAvailable ? 1 : 0) +
     (adv.verifiedOnly ? 1 : 0) +
     adv.entranceExams.length +
     adv.courses.length +
     (adv.maxFee !== "any" ? 1 : 0);
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 md:p-8">
@@ -367,7 +409,6 @@ export default function CollegeDiscovery() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  {/* Max annual fee */}
                   <div className="space-y-2">
                     <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
                       Annual Fee
@@ -384,7 +425,6 @@ export default function CollegeDiscovery() {
                     </Select>
                   </div>
 
-                  {/* Entrance Exams */}
                   <div className="space-y-2">
                     <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
                       Entrance Exam
@@ -413,7 +453,6 @@ export default function CollegeDiscovery() {
                     </div>
                   </div>
 
-                  {/* Courses / Branch */}
                   <div className="space-y-2">
                     <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
                       Course / Branch
@@ -443,7 +482,6 @@ export default function CollegeDiscovery() {
                   </div>
                 </div>
 
-                {/* Checkbox row */}
                 <div className="flex flex-wrap items-center gap-6 border-t pt-4">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <Checkbox
@@ -465,7 +503,6 @@ export default function CollegeDiscovery() {
                   </label>
                 </div>
 
-                {/* Apply / Close */}
                 <div className="flex items-center justify-between border-t pt-4">
                   <p className="text-xs text-muted-foreground">
                     Showing {filtered.length} matching {filtered.length === 1 ? "college" : "colleges"}
@@ -497,7 +534,7 @@ export default function CollegeDiscovery() {
         {/* ── College cards ────────────────────────────────────────────── */}
         <div className="space-y-4">
           {filtered.map((college, idx) => {
-            const isShortlisted = shortlistedIds.has(college._id);
+            const isDreamCollege = dreamCollegeIds.has(college._id);
             const deadlineDays = Math.ceil(
               (new Date(college.applicationDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
             );
@@ -576,9 +613,10 @@ export default function CollegeDiscovery() {
                       <div className="flex items-center gap-3">
                         <button
                           className="size-9 inline-flex items-center justify-center rounded-md hover:bg-accent transition-colors"
-                          onClick={() => handleToggleBookmark(college._id)}
+                          onClick={() => handleToggleDreamCollege(college._id)}
+                          aria-label={isDreamCollege ? "Remove from Dream Colleges" : "Add to Dream Colleges"}
                         >
-                          {isShortlisted ? (
+                          {isDreamCollege ? (
                             <Heart className="size-5 fill-red-500 text-red-500" />
                           ) : (
                             <Heart className="size-5 text-muted-foreground" />
@@ -607,12 +645,7 @@ export default function CollegeDiscovery() {
             <p className="mt-4 text-sm font-medium text-muted-foreground">No colleges found</p>
             <p className="mt-1 text-xs text-muted-foreground/70">Try adjusting your search or filters</p>
             {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-4"
-                onClick={clearAdvancedFilters}
-              >
+              <Button variant="outline" size="sm" className="mt-4" onClick={clearAdvancedFilters}>
                 Clear filters
               </Button>
             )}
@@ -698,11 +731,11 @@ export default function CollegeDiscovery() {
                   <Button
                     className="flex-1"
                     onClick={() => {
-                      handleToggleBookmark(selectedCollege._id);
+                      handleToggleDreamCollege(selectedCollege._id);
                       setSelectedCollege(null);
                     }}
                   >
-                    {shortlistedIds.has(selectedCollege._id) ? "Remove from Shortlist" : "Add to Shortlist"}
+                    {dreamCollegeIds.has(selectedCollege._id) ? "Remove from Dream Colleges" : "Add to Dream Colleges"}
                   </Button>
                 </div>
               </motion.div>

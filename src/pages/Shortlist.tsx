@@ -17,11 +17,11 @@ const DEMO_COLLEGES = [
   { _id: "demo-c4", name: "BITS Pilani", course: "B.E. CSE", status: "In Progress", statusColor: "bg-primary/15 text-primary", match: 79, deadline: "28 Aug", annualFee: "₹2.8L", scholarship: "Available", eligibility: "Eligible" },
 ];
 
-async function fetchBookmarkedColleges(args: { userId?: string }) {
+async function fetchDreamCollegesForShortlist(args: { userId?: string }) {
   if (!args.userId) return [];
-  const { data: bookmarks } = await supabase.from("bookmarks").select("item_id").eq("student_id", args.userId).eq("item_type", "college");
-  if (!bookmarks || bookmarks.length === 0) return [];
-  const ids = bookmarks.map((b) => b.item_id);
+  const { data: dreams } = await supabase.from("dream_colleges").select("college_id").eq("student_id", args.userId);
+  if (!dreams || dreams.length === 0) return [];
+  const ids = dreams.map((d) => d.college_id);
   const { data: colleges } = await supabase.from("colleges").select("*").in("id", ids);
   return (colleges ?? []).map((c) => ({
     _id: c.id, name: c.name, course: c.courses?.[0] || "B.Tech CSE", status: "In Progress", statusColor: "bg-primary/15 text-primary",
@@ -31,14 +31,14 @@ async function fetchBookmarkedColleges(args: { userId?: string }) {
 
 export default function Shortlist() {
   const { user } = useAuth();
-  const bookmarkedColleges = useQuery(fetchBookmarkedColleges, { userId: user?._id });
+  const dreamColleges = useQuery(fetchDreamCollegesForShortlist, { userId: user?._id });
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("match");
 
   const displayColleges = useMemo(() => {
-    if (bookmarkedColleges && bookmarkedColleges.length > 0) return bookmarkedColleges;
+    if (dreamColleges && dreamColleges.length > 0) return dreamColleges;
     return DEMO_COLLEGES;
-  }, [bookmarkedColleges]);
+  }, [dreamColleges]);
 
   const filtered = useMemo(() => {
     let results = displayColleges;
