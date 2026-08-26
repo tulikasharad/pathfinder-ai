@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 const DEMO_NOTIFICATIONS = [
   { _id: "n1", title: "Deadline approaching", message: "Your Northstar Institute of Technology application closes in 7 days.", type: "deadline", timeAgo: "2d ago", isRead: false, dotColor: "bg-red-500" },
@@ -13,23 +14,61 @@ const DEMO_NOTIFICATIONS = [
   { _id: "n6", title: "Application submitted", message: "Your VIT University VITEEE application has been confirmed. Application ID: VITEEE2026AI004512.", type: "deadline", timeAgo: "7d ago", isRead: true, dotColor: "bg-emerald-500" },
 ];
 
-async function fetchNotifications(args: { userId?: string }) {
+async function fetchNotifications(args: { userId?: string; v?: number }) {
   if (!args.userId) return [];
-  const { data } = await supabase.from("notifications").select("*").eq("student_id", args.userId);
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .eq("student_id", args.userId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("[fetchNotifications] Error:", error.message);
+    return [];
+  }
   return (data ?? []).map((n) => ({
-    _id: n.id, title: n.title, message: n.message, type: n.type, isRead: n.is_read, actionUrl: n.action_url,
-    timeAgo: "recently", dotColor: n.type === "deadline" ? "bg-red-500" : n.type === "update" ? "bg-blue-500" : "bg-purple-500",
+    _id: n.id,
+    title: n.title,
+    message: n.message,
+    type: n.type,
+    isRead: n.is_read,
+    actionUrl: n.action_url,
+    timeAgo: "recently",
+    dotColor: n.type === "deadline" ? "bg-red-500" : n.type === "update" ? "bg-blue-500" : "bg-purple-500",
   }));
 }
 
 async function markAllReadOp(args: { userId: string }) {
-  await supabase.from("notifications").update({ is_read: true }).eq("student_id", args.userId).eq("is_read", false);
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("student_id", args.userId)
+    .eq("is_read", false);
+  if (error) {
+    console.error("[markAllRead] Error:", error.message);
+    throw new Error(`Failed to mark all read: ${error.message}`);
+  }
+  return { updated: true };
+}
+
+async function markReadOp(args: { notificationId: string }) {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", args.notificationId);
+  if (error) {
+    console.error("[markRead] Error:", error.message);
+    throw new Error(`Failed to mark read: ${error.message}`);
+  }
+  return { updated: true };
 }
 
 export default function Notifications() {
   const { user } = useAuth();
-  const notifications = useQuery(fetchNotifications, { userId: user?._id });
+  const fetchVersionRef = useRef(0);
+  const [fetchVersion, setFetchVersion] = useState(0);
+  const notifications = useQuery(fetchNotifications, { userId: user?._id, v: fetchVersion });
   const markAllRead = useMutation(markAllReadOp);
+  const markRead = useMutation(markReadOp);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [localRead, setLocalRead] = useState<Set<string>>(new Set());
 
@@ -38,19 +77,40 @@ export default function Notifications() {
     return DEMO_NOTIFICATIONS;
   }, [notifications]);
 
-  const unreadCount = useMemo(() => allNotifications.filter((n) => !n.isRead && !localRead.has(n._id)).length, [allNotifications, localRead]);
+  const unreadCount = useMemo(
+    () => allNotifications.filter((n) => !n.isRead && !localRead.has(n._id)).length,
+    [allNotifications, localRead]
+  );
 
   const filtered = useMemo(() => {
     if (filter === "unread") return allNotifications.filter((n) => !n.isRead && !localRead.has(n._id));
     return allNotifications;
   }, [allNotifications, filter, localRead]);
 
-  const handleMarkAllRead = () => {
-    if (user) markAllRead({ userId: user._id });
-    setLocalRead(new Set(allNotifications.map((n) => n._id)));
-  };
+  const handleMarkAllRead = useCallback(async () => {
+    if (!user) return;
+    try {
+      await markAllRead({ userId: user._id });
+      fetchVersionRef.current += 1;
+      setFetchVersion(fetchVersionRef.current);
+      setLocalRead(new Set(allNotifications.map((n) => n._id)));
+      toast.success("All notifications marked as read.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed.");
+    }
+  }, [user, markAllRead, allNotifications]);
 
-  const handleMarkRead = (id: string) => setLocalRead(new Set([...localRead, id]));
+  const handleMarkRead = useCallback(
+    async (id: string) => {
+      try {
+        await markRead({ notificationId: id });
+        setLocalRead((prev) => new Set([...prev, id]));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed.");
+      }
+    },
+    [markRead]
+  );
 
   return (
     <div className="p-6 md:p-8">
@@ -58,30 +118,56 @@ export default function Notifications() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Notifications</h1>
-            <p className="mt-1 text-muted-foreground">{unreadCount > 0 ? `${unreadCount} unread notification${unreadCount !== 1 ? "s" : ""}` : "You're all caught up!"}</p>
+            <p className="mt-1 text-muted-foreground">
+              {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount !== 1 ? "s" : ""}` : "You're all caught up!"}
+            </p>
           </div>
-          {unreadCount > 0 && <button onClick={handleMarkAllRead} className="text-sm text-primary hover:underline">Mark all read</button>}
+          {unreadCount > 0 && (
+            <button onClick={handleMarkAllRead} className="text-sm text-primary hover:underline">
+              Mark all read
+            </button>
+          )}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setFilter("all")} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${filter === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}>All</button>
-          <button onClick={() => setFilter("unread")} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${filter === "unread" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}>Unread ({unreadCount})</button>
+          <button
+            onClick={() => setFilter("all")}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${filter === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilter("unread")}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${filter === "unread" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+          >
+            Unread ({unreadCount})
+          </button>
         </div>
         <div className="space-y-1">
           {filtered.map((n, idx) => {
             const isUnread = !n.isRead && !localRead.has(n._id);
             return (
               <motion.div key={n._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-                <button onClick={() => isUnread && handleMarkRead(n._id)} className={`flex w-full items-center gap-4 rounded-lg border border-border/60 px-4 py-4 text-left transition-all hover:border-border ${isUnread ? "bg-accent/20" : ""}`}>
+                <button
+                  onClick={() => isUnread && handleMarkRead(n._id)}
+                  className={`flex w-full items-center gap-4 rounded-lg border border-border/60 px-4 py-4 text-left transition-all hover:border-border ${isUnread ? "bg-accent/20" : ""}`}
+                >
                   {isUnread && <span className="size-2 shrink-0 rounded-full bg-primary" />}
                   <div className={`size-10 shrink-0 rounded-full ${n.dotColor}`} />
-                  <div className="flex-1 min-w-0"><h3 className="text-sm font-semibold">{n.title}</h3><p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p></div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold">{n.title}</h3>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p>
+                  </div>
                   <span className="shrink-0 text-xs text-muted-foreground">{n.timeAgo}</span>
                 </button>
               </motion.div>
             );
           })}
         </div>
-        {filtered.length === 0 && <div className="rounded-xl border border-dashed p-12 text-center"><p className="text-sm font-medium text-muted-foreground">No notifications</p></div>}
+        {filtered.length === 0 && (
+          <div className="rounded-xl border border-dashed p-12 text-center">
+            <p className="text-sm font-medium text-muted-foreground">No notifications</p>
+          </div>
+        )}
       </motion.div>
     </div>
   );

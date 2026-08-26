@@ -1,44 +1,115 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@/hooks/use-supabase-query";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 const APP_STEPS = ["Eligibility", "Application", "Payment", "Exam", "Result", "Counselling", "Admission"];
 
-const DEMO_APPLICATIONS = [
-  { _id: "demo1", name: "Northstar Institute of Technology", course: "B.Tech CSE", applicationId: "NIT2026CS001247", phase: "Phase 1", status: "started", deadline: "30 Aug 2026", completedSteps: 2 },
-  { _id: "demo2", name: "VIT University Vellore", course: "B.Tech CSE (AI & ML)", applicationId: "VITEEE2026AI004512", phase: "Phase 1", status: "started", deadline: "25 Aug 2026", completedSteps: 3 },
+const STATUS_OPTIONS = [
+  { value: "interested", label: "Interested" },
+  { value: "preparing", label: "Preparing Documents" },
+  { value: "started", label: "Application Started" },
+  { value: "applied", label: "Applied" },
+  { value: "selected", label: "Selected" },
+  { value: "not_selected", label: "Not Selected" },
 ];
+
+const STATUS_COLORS: Record<string, string> = {
+  interested: "bg-blue-500/15 text-blue-500",
+  preparing: "bg-amber-500/15 text-amber-500",
+  started: "bg-primary/15 text-primary",
+  applied: "bg-emerald-500/15 text-emerald-500",
+  selected: "bg-emerald-500/15 text-emerald-500",
+  not_selected: "bg-red-500/15 text-red-500",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  interested: "Interested",
+  preparing: "Preparing",
+  started: "In Progress",
+  applied: "Applied",
+  selected: "Selected",
+  not_selected: "Rejected",
+};
+
+function getCompletedSteps(status: string) {
+  switch (status) {
+    case "applied": return 5;
+    case "started": return 3;
+    case "preparing": return 2;
+    case "interested": return 1;
+    default: return 0;
+  }
+}
 
 async function fetchApps(args: { userId?: string }) {
   if (!args.userId) return [];
   const { data } = await supabase.from("applications").select("*").eq("student_id", args.userId);
   return (data ?? []).map((r) => ({
-    _id: r.id, name: r.name, status: r.status, deadline: r.deadline, course: r.course_id || "—", phase: r.phase || "Phase 1", applicationId: r.application_id || "—",
-    completedSteps: r.status === "applied" ? 5 : r.status === "started" ? 3 : r.status === "preparing" ? 2 : r.status === "interested" ? 1 : 0,
+    _id: r.id,
+    name: r.name,
+    status: r.status,
+    deadline: r.deadline,
+    course: r.course_id || "—",
+    phase: r.phase || "Phase 1",
+    applicationId: r.application_id || "—",
   }));
+}
+
+async function updateAppStatus(args: { appId: string; status: string }) {
+  const { error } = await supabase
+    .from("applications")
+    .update({ status: args.status })
+    .eq("id", args.appId);
+  if (error) {
+    console.error("[updateAppStatus] Error:", error.message, error.details);
+    throw new Error(`Failed to update status: ${error.message}`);
+  }
+  return { updated: true };
 }
 
 export default function Applications() {
   const { user } = useAuth();
   const applications = useQuery(fetchApps, { userId: user?._id });
+  const updateStatus = useMutation(updateAppStatus);
   const [searchQuery, setSearchQuery] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const displayApps = useMemo(() => {
     if (applications && applications.length > 0) return applications;
-    return DEMO_APPLICATIONS;
+    return [];
   }, [applications]);
 
   const filtered = useMemo(() => {
     if (!searchQuery) return displayApps;
     const q = searchQuery.toLowerCase();
-    return displayApps.filter((a) => a.name.toLowerCase().includes(q) || a.course.toLowerCase().includes(q));
+    return displayApps.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.course.toLowerCase().includes(q)
+    );
   }, [displayApps, searchQuery]);
+
+  const handleStatusChange = useCallback(
+    async (appId: string, newStatus: string) => {
+      setUpdatingId(appId);
+      try {
+        await updateStatus({ appId, status: newStatus });
+        toast.success("Application status updated.");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to update.";
+        toast.error(message);
+      } finally {
+        setUpdatingId(null);
+      }
+    },
+    [updateStatus]
+  );
 
   return (
     <div className="p-6 md:p-8">
@@ -49,11 +120,17 @@ export default function Applications() {
         </div>
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search applications..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input
+            placeholder="Search applications..."
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
         <div className="space-y-4">
           {filtered.map((app, idx) => {
-            const completedSteps = typeof app.completedSteps === "number" ? app.completedSteps : 0;
+            const completedSteps = getCompletedSteps(app.status);
+            const isUpdating = updatingId === app._id;
             return (
               <motion.div key={app._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
                 <Card className="border-border/60">
@@ -61,7 +138,9 @@ export default function Applications() {
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <Badge className="bg-primary/15 text-primary border-0 text-[10px]">In Progress</Badge>
+                          <Badge className={`${STATUS_COLORS[app.status] || STATUS_COLORS.started} border-0 text-[10px]`}>
+                            {STATUS_LABELS[app.status] || "In Progress"}
+                          </Badge>
                           <span className="text-xs text-muted-foreground">{app.phase}</span>
                         </div>
                         <h3 className="mt-2 text-lg font-bold">{app.name}</h3>
@@ -74,6 +153,24 @@ export default function Applications() {
                         <p className="mt-1 text-sm font-medium text-amber-500">Due: {app.deadline}</p>
                       </div>
                     </div>
+
+                    {/* Status update buttons */}
+                    <div className="mt-4 flex flex-wrap gap-1.5">
+                      {STATUS_OPTIONS.map((opt) => (
+                        <Button
+                          key={opt.value}
+                          variant={app.status === opt.value ? "default" : "outline"}
+                          size="sm"
+                          className="h-7 text-[10px]"
+                          disabled={isUpdating || app.status === opt.value}
+                          onClick={() => handleStatusChange(app._id, opt.value)}
+                        >
+                          {isUpdating && app.status !== opt.value ? "..." : opt.label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {/* Step progress */}
                     <div className="mt-5">
                       <div className="flex items-center justify-between">
                         {APP_STEPS.map((step, i) => {
@@ -87,7 +184,11 @@ export default function Applications() {
                                 </div>
                                 <p className={`mt-1.5 text-[10px] font-medium ${isCompleted ? "text-foreground" : "text-muted-foreground"}`}>{step}</p>
                               </div>
-                              {i < APP_STEPS.length - 1 && <div className="mx-1 mt-[-20px] h-[2px] flex-1"><div className={`h-full rounded-full ${i < completedSteps ? "bg-primary" : "bg-muted-foreground/20"}`} /></div>}
+                              {i < APP_STEPS.length - 1 && (
+                                <div className="mx-1 mt-[-20px] h-[2px] flex-1">
+                                  <div className={`h-full rounded-full ${i < completedSteps ? "bg-primary" : "bg-muted-foreground/20"}`} />
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -99,7 +200,12 @@ export default function Applications() {
             );
           })}
         </div>
-        {filtered.length === 0 && <div className="rounded-xl border border-dashed p-12 text-center"><p className="text-sm font-medium text-muted-foreground">No applications found</p></div>}
+        {filtered.length === 0 && (
+          <div className="rounded-xl border border-dashed p-12 text-center">
+            <p className="text-sm font-medium text-muted-foreground">No applications found</p>
+            <p className="mt-1 text-xs text-muted-foreground/70">Add colleges from the Discover page to start tracking</p>
+          </div>
+        )}
       </motion.div>
     </div>
   );

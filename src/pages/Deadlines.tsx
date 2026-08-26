@@ -1,47 +1,92 @@
-import { useMemo } from "react";
-import { useQuery } from "@/hooks/use-supabase-query";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Calendar, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 function getDaysUntil(dateStr: string) {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-const DEMO_DEADLINES = [
-  { _id: "demo-d1", name: "VIT University Vellore", course: "B.Tech CSE (AI & ML) · Phase 1", deadline: "25 Aug 2026", examDate: "8 Sept 2026", verified: "2026-08-12", status: "Urgent", statusColor: "bg-red-500/15 text-red-500", saved: true, sourceUrl: "https://vit.ac.in" },
-  { _id: "demo-d2", name: "Northstar Institute of Technology", course: "B.Tech CSE · Phase 1", deadline: "30 Aug 2026", examDate: "10 Sept 2026", verified: "2026-08-10", status: "Closing Soon", statusColor: "bg-amber-500/15 text-amber-500", saved: true, sourceUrl: "https://northstar.edu" },
-  { _id: "demo-d3", name: "BITS Pilani", course: "B.E. CSE · Phase 1", deadline: "28 Aug 2026", examDate: "8 Sept 2026", verified: "2026-08-15", status: "Closing Soon", statusColor: "bg-amber-500/15 text-amber-500", saved: true, sourceUrl: "https://bits-pilani.ac.in" },
-  { _id: "demo-d4", name: "Symbiosis Institute of Technology", course: "B.Tech CSE · Phase 1", deadline: "5 Sept 2026", examDate: "15 Sept 2026", verified: "2026-08-10", status: "Upcoming", statusColor: "bg-blue-500/15 text-blue-500", saved: false, sourceUrl: "https://sit.ac.in" },
-];
+function getUrgency(days: number) {
+  if (days < 0) return { label: "Closed", color: "bg-red-500/15 text-red-500", barColor: "bg-red-500", numColor: "text-red-500" };
+  if (days <= 3) return { label: "Urgent", color: "bg-red-500/15 text-red-500", barColor: "bg-red-500", numColor: "text-red-500" };
+  if (days <= 7) return { label: "Closing Soon", color: "bg-amber-500/15 text-amber-500", barColor: "bg-amber-500", numColor: "text-amber-500" };
+  if (days <= 30) return { label: "Upcoming", color: "bg-blue-500/15 text-blue-500", barColor: "bg-blue-500", numColor: "" };
+  return { label: "Upcoming", color: "bg-blue-500/15 text-blue-500", barColor: "bg-muted-foreground/20", numColor: "" };
+}
 
 async function fetchDeadlines(args: { userId?: string }) {
   if (!args.userId) return [];
   const { data } = await supabase.from("deadlines").select("*").eq("student_id", args.userId);
   return (data ?? []).map((d) => ({
-    _id: d.id, name: d.title, course: d.type || "Application", deadline: d.date, examDate: null as string | null, verified: null as string | null,
-    status: getDaysUntil(d.date) <= 3 ? "Urgent" : "Upcoming", statusColor: getDaysUntil(d.date) <= 3 ? "bg-red-500/15 text-red-500" : "bg-blue-500/15 text-blue-500", saved: true, sourceUrl: "", isCompleted: d.is_completed,
+    _id: d.id,
+    name: d.title,
+    type: d.type || "Application",
+    deadline: d.date,
+    priority: d.priority,
+    isCompleted: d.is_completed,
   }));
+}
+
+async function toggleDeadlineCompleteOp(args: { deadlineId: string; isCompleted: boolean }) {
+  const { error } = await supabase
+    .from("deadlines")
+    .update({ is_completed: args.isCompleted })
+    .eq("id", args.deadlineId);
+  if (error) {
+    console.error("[toggleDeadlineComplete] Error:", error.message);
+    throw new Error(`Failed to update: ${error.message}`);
+  }
+  return { updated: true };
 }
 
 export default function Deadlines() {
   const { user } = useAuth();
   const deadlines = useQuery(fetchDeadlines, { userId: user?._id });
-
-  const allDeadlines = useMemo(() => {
-    if (deadlines && deadlines.length > 0) return deadlines;
-    return DEMO_DEADLINES.map((d) => ({ ...d, isCompleted: false }));
-  }, [deadlines]);
+  const toggleComplete = useMutation(toggleDeadlineCompleteOp);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
-    return [...allDeadlines].map((d) => ({ ...d, daysUntil: getDaysUntil(d.deadline) })).sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-      return a.daysUntil - b.daysUntil;
-    });
-  }, [allDeadlines]);
+    if (!deadlines) return [];
+    return [...deadlines]
+      .map((d) => ({ ...d, daysUntil: getDaysUntil(d.deadline) }))
+      .sort((a, b) => {
+        if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+        return a.daysUntil - b.daysUntil;
+      });
+  }, [deadlines]);
+
+  const alerts = useMemo(() => {
+    if (!sorted.length) return [];
+    return sorted
+      .filter((d) => !d.isCompleted && d.daysUntil <= 7 && d.daysUntil >= 0)
+      .map((d) => ({
+        type: d.daysUntil <= 3 ? "urgent" : "closing",
+        title: d.name,
+        message: d.daysUntil <= 0 ? "is overdue" : `closes in ${d.daysUntil} day${d.daysUntil !== 1 ? "s" : ""}`,
+      }));
+  }, [sorted]);
+
+  const handleToggleComplete = useCallback(
+    async (deadlineId: string, currentState: boolean) => {
+      setTogglingId(deadlineId);
+      try {
+        await toggleComplete({ deadlineId, isCompleted: !currentState });
+        toast.success(currentState ? "Marked as incomplete" : "Marked as complete");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update.");
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [toggleComplete]
+  );
 
   return (
     <div className="p-6 md:p-8">
@@ -51,52 +96,61 @@ export default function Deadlines() {
           <p className="mt-1 text-muted-foreground">Your upcoming college application and exam deadlines.</p>
         </div>
 
-        {/* Alert Banners */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
-            <Badge className="bg-amber-500/15 text-amber-500 border-0 font-mono text-[10px] uppercase">Deadline Extended</Badge>
-            <p className="text-sm"><span className="font-bold">VIT University Vellore</span> extended the Phase 1 deadline from <span className="text-muted-foreground line-through">20 Aug 2026</span> to <span className="font-bold text-amber-500">25 Aug 2026</span>.</p>
+        {/* Dynamic Alert Banners */}
+        {alerts.length > 0 && (
+          <div className="space-y-2">
+            {alerts.map((alert, i) => (
+              <div key={i} className={`flex items-center gap-3 rounded-lg border border-border/60 px-4 py-3 ${alert.type === "urgent" ? "bg-red-500/5" : "bg-accent/30"}`}>
+                <Badge className={`${alert.type === "urgent" ? "bg-red-500/15 text-red-500" : "bg-amber-500/15 text-amber-500"} border-0 font-mono text-[10px] uppercase`}>
+                  {alert.type === "urgent" ? "Urgent" : "Closing Soon"}
+                </Badge>
+                <p className="text-sm">
+                  <span className="font-bold">{alert.title}</span> {alert.message}.
+                </p>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-accent/30 px-4 py-3">
-            <Badge className="bg-emerald-500/15 text-emerald-500 border-0 font-mono text-[10px] uppercase">Exam Rescheduled</Badge>
-            <p className="text-sm"><span className="font-bold">VITEEE Phase 1</span> rescheduled from <span className="text-muted-foreground line-through">5 Sept 2026</span> to <span className="font-bold text-emerald-500">8 Sept 2026</span>.</p>
-          </div>
-        </div>
+        )}
 
         {/* Deadline Cards */}
         <div className="space-y-3">
           {sorted.map((d, idx) => {
             const daysUntil = d.daysUntil;
-            const isUrgent = daysUntil <= 3 && daysUntil >= 0;
-            const isPast = daysUntil < 0;
+            const urgency = getUrgency(daysUntil);
+            const isToggling = togglingId === d._id;
             return (
               <motion.div key={d._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-                <Card className="border-border/60">
+                <Card className={`border-border/60 ${d.isCompleted ? "opacity-60" : ""}`}>
                   <CardContent className="flex items-center gap-5 p-5">
-                    <div className={`h-14 w-1 shrink-0 rounded-full ${isPast ? "bg-red-500" : isUrgent ? "bg-amber-500" : "bg-muted-foreground/20"}`} />
+                    <div className={`h-14 w-1 shrink-0 rounded-full ${urgency.barColor}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-bold">{d.name}</h3>
-                        <Badge className={`${d.statusColor} border-0 text-[10px]`}>{d.status}</Badge>
+                        <Badge className={`${urgency.color} border-0 text-[10px]`}>{urgency.label}</Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">{d.course}</p>
+                      <p className="text-sm text-muted-foreground">{d.type}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-4 text-xs">
-                        <span><span className="text-muted-foreground">DEADLINE: </span><span className={`font-medium ${isUrgent ? "text-amber-500" : isPast ? "text-red-500" : ""}`}>{d.deadline}</span></span>
-                        {d.examDate && <span><span className="text-muted-foreground">EXAM: </span><span className="font-medium">{d.examDate}</span></span>}
-                        {d.verified && <span><span className="text-muted-foreground">VERIFIED: </span><span className="font-medium">{d.verified}</span></span>}
+                        <span>
+                          <span className="text-muted-foreground">DEADLINE: </span>
+                          <span className={`font-medium ${urgency.numColor}`}>{d.deadline}</span>
+                        </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className={`text-3xl font-bold ${isPast ? "text-red-500" : isUrgent ? "text-amber-500" : "text-foreground"}`}>{Math.max(0, daysUntil)}</p>
+                      <p className={`text-3xl font-bold ${urgency.numColor}`}>{Math.max(0, daysUntil)}</p>
                       <p className="text-xs text-muted-foreground">days left</p>
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
-                      {d.saved ? (
-                        <button className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium"><CheckCircle2 className="size-3" /> Saved</button>
-                      ) : (
-                        <button className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium">+ Save</button>
-                      )}
-                      {d.sourceUrl && <a href={d.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">Source ↗</a>}
+                      <Button
+                        variant={d.isCompleted ? "default" : "outline"}
+                        size="sm"
+                        className="gap-1 text-xs"
+                        disabled={isToggling}
+                        onClick={() => handleToggleComplete(d._id, d.isCompleted)}
+                      >
+                        <CheckCircle2 className="size-3" />
+                        {isToggling ? "..." : d.isCompleted ? "Completed" : "Mark Done"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -105,7 +159,12 @@ export default function Deadlines() {
           })}
         </div>
 
-        {sorted.length === 0 && <div className="rounded-xl border border-dashed p-8 text-center"><Calendar className="mx-auto size-10 text-muted-foreground/30" /><p className="mt-3 text-sm font-medium text-muted-foreground">No upcoming deadlines</p></div>}
+        {sorted.length === 0 && (
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <Calendar className="mx-auto size-10 text-muted-foreground/30" />
+            <p className="mt-3 text-sm font-medium text-muted-foreground">No upcoming deadlines</p>
+          </div>
+        )}
       </motion.div>
     </div>
   );

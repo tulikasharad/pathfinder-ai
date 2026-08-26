@@ -5,9 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
-import {
-  Target,
-} from "lucide-react";
+import { Target } from "lucide-react";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -22,6 +20,20 @@ function getDaysUntil(dateStr: string) {
   const now = new Date();
   const date = new Date(dateStr);
   return Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getUrgencyColor(days: number) {
+  if (days <= 0) return "text-red-500";
+  if (days <= 3) return "text-red-500";
+  if (days <= 7) return "text-amber-500";
+  if (days <= 30) return "text-blue-400";
+  return "text-muted-foreground";
+}
+
+function getPriorityLabel(days: number) {
+  if (days <= 3) return { label: "URGENT", color: "text-red-500", borderColor: "hsl(var(--destructive))" };
+  if (days <= 7) return { label: "HIGH", color: "text-amber-500", borderColor: "hsl(38, 92%, 50%)" };
+  return { label: "MEDIUM", color: "text-blue-400", borderColor: "hsl(217, 91%, 60%)" };
 }
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
@@ -107,51 +119,6 @@ async function seedDemoData() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const ACTIONS_DATA = [
-  {
-    priority: "URGENT",
-    priorityColor: "text-red-500",
-    title: "JEE Main registration",
-    subtitle: "Northstar Institute of Technology · Entrance exam",
-    timeLeft: "7d left",
-    actionLabel: "Register now →",
-    actionPath: "/deadlines",
-  },
-  {
-    priority: "HIGH",
-    priorityColor: "text-amber-500",
-    title: "Pay application fee",
-    subtitle: "Northstar Institute of Technology · Payment",
-    timeLeft: "7d left",
-    actionLabel: "Pay now →",
-    actionPath: "/applications",
-  },
-  {
-    priority: "MEDIUM",
-    priorityColor: "text-blue-400",
-    title: "Upload 12th marksheet",
-    subtitle: "VIT University Vellore · Document upload",
-    timeLeft: "2d left",
-    actionLabel: "Upload →",
-    actionPath: "/applications",
-  },
-  {
-    priority: "MEDIUM",
-    priorityColor: "text-blue-400",
-    title: "Complete JEE application form",
-    subtitle: "JEE Main · Application",
-    timeLeft: "13d left",
-    actionLabel: "Start →",
-    actionPath: "/applications",
-  },
-];
-
-const DEADLINES_DATA = [
-  { name: "Northstar Institute of Technology", course: "Phase 1 · B.Tech CSE", daysLeft: "7d left" },
-  { name: "VIT University Vellore", course: "VITEEE · Phase 1", daysLeft: "0d left" },
-  { name: "BITS Pilani", course: "Phase 1 · B.E. CSE", daysLeft: "3d left" },
-];
-
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -186,12 +153,57 @@ export default function Dashboard() {
     }).length;
   }, [deadlines]);
 
-  const upcomingDeadlines = useMemo(() => {
-    if (!deadlines) return [];
+  // ── Action Center: built from LIVE deadlines data ──────────────────────────
+  const actionItems = useMemo(() => {
+    if (!deadlines || deadlines.length === 0) return [];
+    return deadlines
+      .filter((d) => !d.isCompleted)
+      .map((d) => {
+        const days = getDaysUntil(d.date);
+        const urgency = getPriorityLabel(days);
+        const typeLabel =
+          d.type === "exam" ? "Entrance exam" :
+          d.type === "application" ? "Application" :
+          d.type === "document" ? "Document upload" : "Action";
+        const path =
+          d.type === "exam" ? "/deadlines" :
+          d.type === "application" ? "/applications" : "/applications";
+        return {
+          priority: urgency.label,
+          priorityColor: urgency.color,
+          borderColor: urgency.borderColor,
+          title: d.title,
+          subtitle: typeLabel,
+          timeLeft: days <= 0 ? "Overdue" : `${days}d left`,
+          actionLabel: days <= 0 ? "Overdue →" : "View →",
+          actionPath: path,
+        };
+      })
+      .sort((a, b) => {
+        const order = { URGENT: 0, HIGH: 1, MEDIUM: 2 };
+        return (order[a.priority as keyof typeof order] ?? 3) - (order[b.priority as keyof typeof order] ?? 3);
+      });
+  }, [deadlines]);
+
+  // ── Deadline Corner: built from LIVE deadlines data ────────────────────────
+  const deadlineCornerItems = useMemo(() => {
+    if (!deadlines || deadlines.length === 0) return [];
     return deadlines
       .filter((d) => !d.isCompleted && getDaysUntil(d.date) >= 0)
       .sort((a, b) => getDaysUntil(a.date) - getDaysUntil(b.date))
-      .slice(0, 3);
+      .slice(0, 3)
+      .map((d) => ({
+        name: d.title,
+        course: d.type || "Application",
+        daysLeft: `${Math.max(0, getDaysUntil(d.date))}d left`,
+        daysNum: Math.max(0, getDaysUntil(d.date)),
+      }));
+  }, [deadlines]);
+
+  // ── Upcoming deadlines count ───────────────────────────────────────────────
+  const upcomingCount = useMemo(() => {
+    if (!deadlines) return 0;
+    return deadlines.filter((d) => !d.isCompleted && getDaysUntil(d.date) >= 0).length;
   }, [deadlines]);
 
   const greeting = useMemo(() => {
@@ -239,16 +251,16 @@ export default function Dashboard() {
           </Card>
           <Card className="border-border/60">
             <CardContent className="p-5">
-              <p className="text-4xl font-bold text-blue-400">{upcomingDeadlines.length || 7}</p>
+              <p className="text-4xl font-bold text-blue-400">{upcomingCount}</p>
               <p className="mt-1 text-sm font-medium">Upcoming deadlines</p>
               <p className="text-xs text-muted-foreground">across your journey</p>
             </CardContent>
           </Card>
           <Card className="border-border/60">
             <CardContent className="p-5">
-              <p className="text-4xl font-bold text-emerald-400">18</p>
-              <p className="mt-1 text-sm font-medium">Eligible opportunities</p>
-              <p className="text-xs text-muted-foreground">matched to you</p>
+              <p className="text-4xl font-bold text-emerald-400">{appStats.total || 0}</p>
+              <p className="mt-1 text-sm font-medium">Total applications</p>
+              <p className="text-xs text-muted-foreground">being tracked</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -266,22 +278,15 @@ export default function Dashboard() {
                     </p>
                     <p className="mt-1 text-lg font-bold">Your next right steps</p>
                   </div>
-                  <span className="text-sm text-muted-foreground">2 urgent</span>
+                  <span className="text-sm text-muted-foreground">{urgentCount} urgent</span>
                 </div>
 
                 <div className="space-y-1">
-                  {ACTIONS_DATA.map((action, i) => (
+                  {actionItems.length > 0 ? actionItems.map((action, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-4 rounded-lg border-l-2 border-l-border px-4 py-3 transition-colors hover:bg-accent/30"
-                      style={{
-                        borderLeftColor:
-                          action.priority === "URGENT"
-                            ? "hsl(var(--destructive))"
-                            : action.priority === "HIGH"
-                            ? "hsl(38, 92%, 50%)"
-                            : "hsl(217, 91%, 60%)",
-                      }}
+                      style={{ borderLeftColor: action.borderColor }}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -300,7 +305,9 @@ export default function Dashboard() {
                         {action.actionLabel}
                       </button>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="py-4 text-center text-sm text-muted-foreground">No urgent actions</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -321,7 +328,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-base font-bold">Start with the prerequisite.</p>
                 <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                  Register for JEE Main first. It is required for your strongest profile match and closes before the college application deadline at Northstar Institute of Technology.
+                  Register for JEE Main first. It is required for your strongest profile match and closes before the college application deadline.
                 </p>
                 <button
                   onClick={() => navigate("/discover")}
@@ -332,7 +339,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* Deadline Corner */}
+            {/* Deadline Corner — now LIVE from database */}
             <Card className="border-border/60">
               <CardContent className="p-5">
                 <div className="mb-4 flex items-center justify-between">
@@ -351,10 +358,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-3">
-                  {DEADLINES_DATA.map((d, i) => {
-                    const daysNum = parseInt(d.daysLeft);
-                    const color =
-                      daysNum <= 1 ? "text-red-500" : daysNum <= 5 ? "text-amber-500" : "text-muted-foreground";
+                  {deadlineCornerItems.length > 0 ? deadlineCornerItems.map((d, i) => {
+                    const color = getUrgencyColor(d.daysNum);
                     return (
                       <div key={i} className="flex items-center justify-between">
                         <div className="min-w-0">
@@ -366,7 +371,9 @@ export default function Dashboard() {
                         </span>
                       </div>
                     );
-                  })}
+                  }) : (
+                    <p className="py-2 text-center text-sm text-muted-foreground">No upcoming deadlines</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
