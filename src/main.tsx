@@ -19,6 +19,7 @@ const Deadlines = lazy(() => import("./pages/Deadlines.tsx"));
 const ScholarshipNavigator = lazy(() => import("./pages/ScholarshipNavigator.tsx"));
 const Notifications = lazy(() => import("./pages/Notifications.tsx"));
 const Profile = lazy(() => import("./pages/Profile.tsx"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const AppLayout = lazy(() => import("./components/AppLayout.tsx"));
 
@@ -200,6 +201,10 @@ createRoot(document.getElementById("root")!).render(
                     <Profile />
                   </AuthenticatedLayout>
                 }
+              />
+              <Route
+                path="/reset-password"
+                element={<ResetPassword />}
               />
               <Route path="*" element={<NotFound />} />
             </Routes>

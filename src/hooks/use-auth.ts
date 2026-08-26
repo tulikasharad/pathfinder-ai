@@ -6,7 +6,6 @@ interface UserProfile {
   name?: string;
   email?: string;
   image?: string;
-  isAnonymous?: boolean;
   onboardingCompleted?: boolean;
   studentProfile?: {
     age?: number;
@@ -26,10 +25,21 @@ interface UserProfile {
   };
 }
 
+export type AuthView =
+  | "signin"
+  | "signup"
+  | "forgot-password"
+  | "reset-password"
+  | "email-confirmation"
+  | "password-updated";
+
 export function useAuth() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authView, setAuthView] = useState<AuthView>("signin");
+
+  // ── Profile helpers ────────────────────────────────────────────────────────
 
   const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -45,33 +55,54 @@ export function useAuth() {
       name: data.name,
       email: data.email,
       image: data.image,
-      isAnonymous: data.is_anonymous,
       onboardingCompleted: data.onboarding_completed,
-      studentProfile: data.age != null
-        ? {
-            age: data.age,
-            state: data.state,
-            gender: data.gender,
-            annualFamilyIncome: data.annual_family_income,
-            category: data.category,
-            educationLevel: data.education_level,
-            schoolType: data.school_type,
-            course: data.course,
-            institutionType: data.institution_type,
-            academicScore: data.academic_score,
-            isDisabled: data.is_disabled,
-            isMinority: data.is_minority,
-            isFirstGeneration: data.is_first_generation,
-            otherCriteria: data.other_criteria,
-          }
-        : undefined,
+      studentProfile:
+        data.age != null
+          ? {
+              age: data.age,
+              state: data.state,
+              gender: data.gender,
+              annualFamilyIncome: data.annual_family_income,
+              category: data.category,
+              educationLevel: data.education_level,
+              schoolType: data.school_type,
+              course: data.course,
+              institutionType: data.institution_type,
+              academicScore: data.academic_score,
+              isDisabled: data.is_disabled,
+              isMinority: data.is_minority,
+              isFirstGeneration: data.is_first_generation,
+              otherCriteria: data.other_criteria,
+            }
+          : undefined,
     } as UserProfile;
   }, []);
 
   const ensureProfile = useCallback(
-    async (userId: string, email?: string, name?: string, isAnonymous?: boolean) => {
+    async (
+      userId: string,
+      email?: string,
+      name?: string
+    ) => {
       const existing = await fetchProfile(userId);
-      if (existing) return existing;
+      if (existing) {
+        // Merge Supabase auth metadata into profile if profile is missing fields
+        if (email && !existing.email) {
+          await supabase
+            .from("profiles")
+            .update({ email })
+            .eq("id", userId);
+          existing.email = email;
+        }
+        if (name && !existing.name) {
+          await supabase
+            .from("profiles")
+            .update({ name })
+            .eq("id", userId);
+          existing.name = name;
+        }
+        return existing;
+      }
 
       const { data } = await supabase
         .from("profiles")
@@ -80,7 +111,6 @@ export function useAuth() {
             id: userId,
             email: email ?? null,
             name: name ?? null,
-            is_anonymous: isAnonymous ?? false,
             onboarding_completed: false,
           },
           { onConflict: "id" }
@@ -95,7 +125,6 @@ export function useAuth() {
         name: data.name,
         email: data.email,
         image: data.image,
-        isAnonymous: data.is_anonymous,
         onboardingCompleted: data.onboarding_completed,
         studentProfile: undefined,
       } as UserProfile;
@@ -103,10 +132,20 @@ export function useAuth() {
     [fetchProfile]
   );
 
+  // ── Auth state listener ────────────────────────────────────────────────────
+
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
+      // Check for password recovery tokens in the URL hash
+      const hash = window.location.hash;
+      if (hash.includes("type=recovery") || hash.includes("access_token")) {
+        // This is a password recovery link — wait for onAuthStateChange
+        // to process the tokens. Don't set loading to false yet.
+        return;
+      }
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -118,8 +157,7 @@ export function useAuth() {
         const profile = await ensureProfile(
           session.user.id,
           session.user.email ?? undefined,
-          session.user.user_metadata?.name,
-          session.user.is_anonymous
+          session.user.user_metadata?.name
         );
         if (mounted) setUser(profile);
       }
@@ -131,23 +169,50 @@ export function useAuth() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setIsAuthenticated(true);
-        const profile = await ensureProfile(
-          session.user.id,
-          session.user.email ?? undefined,
-          session.user.user_metadata?.name,
-          session.user.is_anonymous
-        );
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        // User clicked the reset-password link — show new password form
         if (mounted) {
-          setUser(profile);
+          setAuthView("reset-password");
           setIsLoading(false);
         }
-      } else {
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") {
+        if (session?.user) {
+          setIsAuthenticated(true);
+          const profile = await ensureProfile(
+            session.user.id,
+            session.user.email ?? undefined,
+            session.user.user_metadata?.name
+          );
+          if (mounted) {
+            setUser(profile);
+            setIsLoading(false);
+          }
+        }
+      } else if (event === "SIGNED_OUT") {
         setIsAuthenticated(false);
         setUser(null);
         if (mounted) setIsLoading(false);
+      } else {
+        if (session?.user) {
+          setIsAuthenticated(true);
+          const profile = await ensureProfile(
+            session.user.id,
+            session.user.email ?? undefined,
+            session.user.user_metadata?.name
+          );
+          if (mounted) {
+            setUser(profile);
+            setIsLoading(false);
+          }
+        } else {
+          setIsAuthenticated(false);
+          setUser(null);
+          if (mounted) setIsLoading(false);
+        }
       }
     });
 
@@ -157,30 +222,32 @@ export function useAuth() {
     };
   }, [ensureProfile]);
 
+  // ── Auth actions ───────────────────────────────────────────────────────────
+
+  const signUp = useCallback(
+    async (args: { email: string; password: string; name: string }) => {
+      const { error } = await supabase.auth.signUp({
+        email: args.email,
+        password: args.password,
+        options: {
+          data: { name: args.name },
+          emailRedirectTo: `${window.location.origin}/auth`,
+        },
+      });
+      if (error) throw error;
+      setAuthView("email-confirmation");
+    },
+    []
+  );
+
   const signIn = useCallback(
-    async (provider: string, formData?: any) => {
-      if (provider === "email-otp") {
-        if (formData instanceof FormData) {
-          const email = formData.get("email") as string;
-          if (formData.get("code")) {
-            const { error } = await supabase.auth.verifyOtp({
-              email,
-              token: formData.get("code") as string,
-              type: "email",
-            });
-            if (error) throw error;
-          } else {
-            const { error } = await supabase.auth.signInWithOtp({ email });
-            if (error) throw error;
-          }
-        } else if (typeof formData === "string") {
-          const { error } = await supabase.auth.signInWithOtp({ email: formData });
-          if (error) throw error;
-        }
-      } else if (provider === "anonymous") {
-        const { error } = await supabase.auth.signInAnonymously();
-        if (error) throw error;
-      }
+    async (args: { email: string; password: string }) => {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: args.email,
+        password: args.password,
+      });
+      if (error) throw error;
+      // Session is set automatically; onAuthStateChange handles the rest
     },
     []
   );
@@ -191,5 +258,31 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { isLoading, isAuthenticated, user, signIn, signOut };
+  const sendPasswordResetEmail = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw error;
+  }, []);
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+    setAuthView("password-updated");
+  }, []);
+
+  return {
+    isLoading,
+    isAuthenticated,
+    user,
+    authView,
+    setAuthView,
+    signUp,
+    signIn,
+    signOut,
+    sendPasswordResetEmail,
+    updatePassword,
+  };
 }
