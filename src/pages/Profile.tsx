@@ -86,7 +86,6 @@ export default function Profile() {
   const profile = useMemo(() => {
     const sp = user?.studentProfile;
     if (sp) {
-      // Build profile from whatever data exists — don't require age
       return {
         name: user.name || DEMO_PROFILE.name,
         email: user.email || DEMO_PROFILE.email,
@@ -114,7 +113,6 @@ export default function Profile() {
   }, [user]);
 
   const startEditing = useCallback(() => {
-    // Copy ALL current profile values into form
     setForm({
       name: profile.name,
       email: profile.email,
@@ -141,59 +139,136 @@ export default function Profile() {
   }, [profile]);
 
   const handleSave = useCallback(async () => {
-    if (!user?._id) {
+    // ── CHECK 1: Verify authenticated user ──────────────────────────────
+    // Get the real Supabase auth user directly — never rely on cached state
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error("[Profile save] Session error:", sessionError.message);
+      toast.error("Authentication error. Please sign in again.");
+      return;
+    }
+
+    const authUser = session?.user;
+    if (!authUser) {
+      console.error("[Profile save] No authenticated user found.");
       toast.error("Not authenticated. Please sign in again.");
       return;
     }
 
-    setIsSaving(true);
-    try {
-      // Only send columns that exist in the profiles table (see migration 001 + 002)
-      const updates: Record<string, unknown> = {
-        name: form.name || null,
-        gender: form.gender || null,
-        category: form.category || null,
-        state: form.state || null,
-        city: form.city || null,
-        education_level: form.studentType || null,
-        course: form.preferredCourse || null,
-        specialization: form.specialization || null,
-        academic_score: form.twelfthPercentage ? Number(form.twelfthPercentage) || null : null,
-        annual_family_income: form.annualFamilyIncome ? Number(form.annualFamilyIncome) || null : null,
-        age: form.age ? Number(form.age) || null : null,
-        hostel_required: form.hostelRequired === "Yes",
-        scholarship_required: form.scholarshipRequired === "Yes",
-        onboarding_completed: true,
-      };
+    const userId = authUser.id;
+    console.log("[Profile save] Auth user ID:", userId);
+    console.log("[Profile save] Form name value:", JSON.stringify(form.name));
 
-      console.log("[Profile save] Sending to Supabase:", updates);
+    // ── CHECK 2: Verify profile row exists ──────────────────────────────
+    const { data: existingRow, error: fetchError } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .eq("id", userId)
+      .maybeSingle();
 
-      const { data, error } = await supabase
+    if (fetchError) {
+      console.error("[Profile save] Error checking profile row:", fetchError.message);
+      toast.error(`Profile lookup failed: ${fetchError.message}`);
+      return;
+    }
+
+    console.log("[Profile save] Existing profile row:", existingRow);
+
+    if (!existingRow) {
+      // Profile row doesn't exist — create it first via upsert
+      console.log("[Profile save] No profile row found. Creating one via upsert...");
+      const { error: upsertError } = await supabase
         .from("profiles")
-        .update(updates)
-        .eq("id", user._id)
-        .select()
-        .single();
+        .upsert(
+          {
+            id: userId,
+            email: authUser.email ?? null,
+            name: form.name || null,
+            onboarding_completed: true,
+          },
+          { onConflict: "id" }
+        );
 
-      if (error) {
-        console.error("[Profile save] Supabase error:", error.message, error.details, error.hint);
-        toast.error(`Save failed: ${error.message}`);
+      if (upsertError) {
+        console.error("[Profile save] Upsert error:", upsertError.message, upsertError.details);
+        toast.error(`Failed to create profile: ${upsertError.message}`);
         return;
       }
-
-      console.log("[Profile save] Updated row:", data);
-
-      // Refresh profile from DB to reflect changes
+      console.log("[Profile save] Profile row created. Refreshing...");
       await refreshProfile();
       setIsEditing(false);
-      toast.success("Profile updated successfully!");
-    } catch (err) {
-      console.error("[Profile save] Unexpected error:", err);
-      toast.error("An unexpected error occurred while saving.");
-    } finally {
-      setIsSaving(false);
+      toast.success("Profile created and saved!");
+      return;
     }
-  }, [user, form, refreshProfile]);
+
+    // ── CHECK 3: Build and send the UPDATE ──────────────────────────────
+    const updates: Record<string, unknown> = {
+      name: form.name || null,
+      gender: form.gender || null,
+      category: form.category || null,
+      state: form.state || null,
+      city: form.city || null,
+      education_level: form.studentType || null,
+      course: form.preferredCourse || null,
+      specialization: form.specialization || null,
+      academic_score: form.twelfthPercentage ? Number(form.twelfthPercentage) || null : null,
+      annual_family_income: form.annualFamilyIncome ? Number(form.annualFamilyIncome) || null : null,
+      age: form.age ? Number(form.age) || null : null,
+      hostel_required: form.hostelRequired === "Yes",
+      scholarship_required: form.scholarshipRequired === "Yes",
+      onboarding_completed: true,
+    };
+
+    console.log("[Profile save] Sending UPDATE:", updates);
+    console.log("[Profile save] WHERE id =", userId);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(updates)
+      .eq("id", userId)
+      .select()
+      .single();
+
+    // ── CHECK 4: Inspect Supabase response ──────────────────────────────
+    if (error) {
+      console.error("[Profile save] Supabase UPDATE error:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      toast.error(`Save failed: ${error.message}`);
+      return;
+    }
+
+    console.log("[Profile save] Supabase UPDATE returned data:", data);
+
+    if (!data) {
+      // This means 0 rows matched — the UPDATE affected nothing
+      console.error("[Profile save] UPDATE returned no data — 0 rows matched. RLS may be blocking, or row doesn't exist.");
+      toast.error("Save failed: the database did not update your profile. Check RLS policies.");
+      return;
+    }
+
+    // ── CHECK 5: Verify the data actually changed ───────────────────────
+    if (data.name !== form.name) {
+      console.warn("[Profile save] WARNING: returned name doesn't match what was sent!", {
+        sent: form.name,
+        returned: data.name,
+      });
+    }
+
+    console.log("[Profile save] ✓ Profile updated successfully. Refreshing...");
+
+    // Refresh profile from DB to reflect changes
+    await refreshProfile();
+    setIsEditing(false);
+    toast.success("Profile updated successfully!");
+  }, [form, refreshProfile]);
 
   return (
     <div className="p-6 md:p-8">
