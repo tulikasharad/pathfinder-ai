@@ -273,6 +273,16 @@ export function useAuth() {
     setAuthView("password-updated");
   }, []);
 
+  const refreshProfile = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user) {
+      const profile = await fetchProfile(session.user.id);
+      setUser(profile);
+    }
+  }, [fetchProfile]);
+
   return {
     isLoading,
     isAuthenticated,
@@ -284,5 +294,6 @@ export function useAuth() {
     signOut,
     sendPasswordResetEmail,
     updatePassword,
+    refreshProfile,
   };
 }
