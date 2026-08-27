@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 const DEMO_NOTIFICATIONS = [
-  { _id: "n1", title: "Deadline approaching", message: "Your Northstar Institute of Technology application closes in 7 days.", type: "deadline", timeAgo: "2d ago", isRead: false, dotColor: "bg-red-500" },
+  { _id: "n1", title: "Deadline approaching", message: "Your application deadline closes in 7 days.", type: "deadline", timeAgo: "2d ago", isRead: false, dotColor: "bg-red-500" },
   { _id: "n2", title: "Deadline extended", message: "VIT University extended VITEEE Phase 1 registration from August 20 to August 25.", type: "update", timeAgo: "3d ago", isRead: false, dotColor: "bg-blue-500" },
   { _id: "n3", title: "New opportunity", message: "You are eligible for 3 new colleges based on your updated profile.", type: "new_scholarship", timeAgo: "4d ago", isRead: false, dotColor: "bg-purple-500" },
   { _id: "n4", title: "Exam rescheduled", message: "VITEEE Phase 1 exam has been rescheduled from September 5 to September 8.", type: "update", timeAgo: "5d ago", isRead: true, dotColor: "bg-blue-400" },

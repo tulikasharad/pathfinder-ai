@@ -103,7 +103,7 @@ async function fetchApps(args: { userId?: string }) {
     console.error("[fetchApps] Error:", error.message);
     return [];
   }
-  return (data ?? []).map((r) => ({
+  const apps = (data ?? []).map((r) => ({
     _id: r.id,
     name: r.name,
     status: r.status,
@@ -111,7 +111,18 @@ async function fetchApps(args: { userId?: string }) {
     course: r.course_id || "—",
     phase: r.phase || "Phase 1",
     applicationId: r.application_id || "—",
+    createdAt: r.created_at,
   }));
+  // Deduplicate: keep only one application per college name (latest by created_at)
+  const seen = new Map<string, typeof apps[0]>();
+  for (const app of apps) {
+    const key = app.name.toLowerCase();
+    const existing = seen.get(key);
+    if (!existing || (app.createdAt ?? "") > (existing.createdAt ?? "")) {
+      seen.set(key, app);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 async function updateAppStatus(args: { appId: string; status: string }) {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { useQuery, useMutation } from "@/hooks/use-supabase-query";
+import { useMemo } from "react";
+import { useQuery } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,51 +72,6 @@ async function fetchDeadlines(args: { userId?: string }) {
   }));
 }
 
-// ── Seed mutation ─────────────────────────────────────────────────────────────
-
-async function seedDemoData() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { seeded: false };
-
-  const { data: existing } = await supabase
-    .from("applications")
-    .select("id")
-    .eq("student_id", user.id)
-    .limit(1);
-
-  if (existing && existing.length > 0) return { seeded: false };
-
-  await supabase.from("applications").insert([
-    {
-      student_id: user.id,
-      type: "college",
-      name: "Northstar Institute of Technology",
-      status: "started",
-      deadline: "2026-08-30",
-      phase: "Phase 1",
-      application_id: "NIT2026CS001247",
-    },
-    {
-      student_id: user.id,
-      type: "college",
-      name: "VIT University Vellore",
-      status: "started",
-      deadline: "2026-08-25",
-      phase: "Phase 1",
-      application_id: "VITEEE2026AI004512",
-    },
-  ]);
-
-  await supabase.from("deadlines").insert([
-    { student_id: user.id, title: "JEE Main registration", date: "2026-09-02", type: "exam", priority: "urgent", is_completed: false },
-    { student_id: user.id, title: "Pay application fee", date: "2026-09-02", type: "application", priority: "high", is_completed: false },
-    { student_id: user.id, title: "Upload 12th marksheet", date: "2026-08-27", type: "document", priority: "medium", is_completed: false },
-    { student_id: user.id, title: "BITS Pilani application", date: "2026-08-28", type: "application", priority: "medium", is_completed: false },
-  ]);
-
-  return { seeded: true };
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -124,11 +79,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const applications = useQuery(fetchApplications, { userId: user?._id });
   const deadlines = useQuery(fetchDeadlines, { userId: user?._id });
-  const seedDemo = useMutation(seedDemoData);
-
-  useEffect(() => {
-    seedDemo();
-  }, [seedDemo]);
 
   const appStats = useMemo(() => {
     if (!applications) return { total: 0, applied: 0, inProgress: 0 };
