@@ -73,28 +73,26 @@ const MAX_FEE_MAP: Record<string, number> = {
 const COMMON_EXAMS = ["JEE Main", "BITSAT", "VITEEE", "SRMJEEE", "MHT-CET", "COMEDK"];
 const COMMON_COURSES = ["B.Tech CSE", "B.Tech ECE", "B.Tech ME", "B.E. CSE", "BCA", "B.Sc"];
 
-// Match scoring imported from @/lib/match-score
-
 // ── Data fetchers ────────────────────────────────────────────────────────────
 
 async function fetchColleges() {
   const { data } = await supabase.from("colleges").select("*");
   return (data ?? []).map((r) => ({
     _id: r.id,
-    name: r.name,
-    location: r.location,
-    state: r.state,
+    name: r.name ?? "",
+    location: r.location ?? "",
+    state: r.state ?? "",
     courses: r.courses ?? [],
     entranceExams: r.entrance_exams ?? [],
-    fees: r.fees,
-    eligibility: r.eligibility,
-    applicationDeadline: r.application_deadline,
+    fees: r.fees ?? "",
+    eligibility: r.eligibility ?? "",
+    applicationDeadline: r.application_deadline ?? "",
     scholarshipsAvailable: r.scholarships_available ?? [],
-    officialUrl: r.official_url,
-    isVerified: r.is_verified,
-    description: r.description,
-    imageUrl: r.image_url,
-    ranking: r.ranking,
+    officialUrl: r.official_url ?? "",
+    isVerified: r.is_verified ?? false,
+    description: r.description ?? "",
+    imageUrl: r.image_url ?? "",
+    ranking: r.ranking ?? null,
   }));
 }
 
@@ -217,7 +215,7 @@ export default function CollegeDiscovery() {
       results = results.filter(
         (c) =>
           c.name.toLowerCase().includes(q) ||
-          c.location.toLowerCase().includes(q) ||
+          (c.location || "").toLowerCase().includes(q) ||
           c.courses.some((course: string) => course.toLowerCase().includes(q))
       );
     }
@@ -280,10 +278,10 @@ export default function CollegeDiscovery() {
         });
 
         // Force dream_colleges re-fetch so heart state updates immediately
-      fetchVersionRef.current += 1;
-      setFetchVersion(fetchVersionRef.current);
+        fetchVersionRef.current += 1;
+        setFetchVersion(fetchVersionRef.current);
 
-      if (result.saved) {
+        if (result.saved) {
           toast.success("College added to your Dream Colleges!");
         } else {
           toast.success("College removed from Dream Colleges.");
@@ -301,7 +299,7 @@ export default function CollegeDiscovery() {
 
   const uniqueStates = useMemo(() => {
     if (!colleges) return [];
-    return [...new Set(colleges.map((c) => c.state))].sort();
+    return [...new Set(colleges.map((c) => c.state).filter(Boolean))].sort();
   }, [colleges]);
 
   const allExams = useMemo(() => {
@@ -564,7 +562,7 @@ export default function CollegeDiscovery() {
                       <div>
                         <h3 className="text-base font-bold">{college.name}</h3>
                         <p className="mt-0.5 text-sm text-muted-foreground">
-                          {college.courses[0] || "B.Tech CSE"} · {college.location}, {college.state}
+                          {college.courses[0] || "B.Tech CSE"} · {college.location || "—"}{college.state ? `, ${college.state}` : ""}
                         </p>
                       </div>
                       <div className="text-right">
@@ -586,7 +584,7 @@ export default function CollegeDiscovery() {
                       </div>
                       <div>
                         <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Annual Fee</p>
-                        <p className="font-medium">{college.fees}</p>
+                        <p className="font-medium">{college.fees || "—"}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Exam</p>
@@ -595,7 +593,7 @@ export default function CollegeDiscovery() {
                       <div>
                         <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Deadline</p>
                         <p className={`font-medium ${isUrgent ? "text-amber-500" : ""}`}>
-                          {college.applicationDeadline}
+                          {college.applicationDeadline || "—"}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 text-xs text-primary">
@@ -612,7 +610,10 @@ export default function CollegeDiscovery() {
                       <div className="flex items-center gap-3">
                         <button
                           className="size-9 inline-flex items-center justify-center rounded-md hover:bg-accent transition-colors"
-                          onClick={() => handleToggleDreamCollege(college._id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleDreamCollege(college._id);
+                          }}
                           aria-label={isDreamCollege ? "Remove from Dream Colleges" : "Add to Dream Colleges"}
                         >
                           {isDreamCollege ? (
@@ -673,7 +674,7 @@ export default function CollegeDiscovery() {
                     <h2 className="text-lg font-bold">{selectedCollege.name}</h2>
                     <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
                       <MapPin className="size-3.5" />
-                      {selectedCollege.location}, {selectedCollege.state}
+                      {selectedCollege.location || "—"}{selectedCollege.state ? `, ${selectedCollege.state}` : ""}
                     </div>
                   </div>
                   <Button variant="ghost" size="icon" onClick={() => setSelectedCollege(null)} className="size-8">
@@ -685,17 +686,17 @@ export default function CollegeDiscovery() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-lg bg-accent/50 p-3">
                       <p className="text-[11px] text-muted-foreground">Fees</p>
-                      <p className="font-medium">{selectedCollege.fees}</p>
+                      <p className="font-medium">{selectedCollege.fees || "—"}</p>
                     </div>
                     <div className="rounded-lg bg-accent/50 p-3">
                       <p className="text-[11px] text-muted-foreground">Deadline</p>
-                      <p className="font-medium">{selectedCollege.applicationDeadline}</p>
+                      <p className="font-medium">{selectedCollege.applicationDeadline || "—"}</p>
                     </div>
                   </div>
                   <div>
                     <p className="font-medium">Entrance Exams</p>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {selectedCollege.entranceExams.map((exam: string) => (
+                      {(selectedCollege.entranceExams || []).map((exam: string) => (
                         <Badge key={exam} variant="outline" className="text-xs">{exam}</Badge>
                       ))}
                     </div>
@@ -703,14 +704,14 @@ export default function CollegeDiscovery() {
                   <div>
                     <p className="font-medium">Courses</p>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {selectedCollege.courses.map((course: string) => (
+                      {(selectedCollege.courses || []).map((course: string) => (
                         <Badge key={course} variant="secondary" className="text-xs">{course}</Badge>
                       ))}
                     </div>
                   </div>
                   <div>
                     <p className="font-medium">Eligibility</p>
-                    <p className="text-muted-foreground">{selectedCollege.eligibility}</p>
+                    <p className="text-muted-foreground">{selectedCollege.eligibility || "—"}</p>
                   </div>
                   {selectedCollege.officialUrl && (
                     <a
@@ -729,8 +730,9 @@ export default function CollegeDiscovery() {
                   </Button>
                   <Button
                     className="flex-1"
-                    onClick={() => {
-                      handleToggleDreamCollege(selectedCollege._id);
+                    onClick={async () => {
+                      // Await the toggle before closing the modal
+                      await handleToggleDreamCollege(selectedCollege._id);
                       setSelectedCollege(null);
                     }}
                   >

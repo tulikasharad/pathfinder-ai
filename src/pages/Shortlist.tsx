@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@/hooks/use-supabase-query";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
@@ -23,7 +23,6 @@ import {
   ExternalLink,
   MapPin,
   CheckCircle2,
-  AlertCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -46,15 +45,13 @@ interface College {
   isVerified: boolean;
   description: string;
   ranking: number | null;
-  course: string; // first course shortcut
+  course: string;
   status: string;
   statusColor: string;
   match: number;
 }
 
 // ── Data fetchers ────────────────────────────────────────────────────────────
-
-const DEMO_COLLEGES: College[] = [];
 
 async function fetchDreamCollegesForShortlist(args: { userId?: string }) {
   if (!args.userId) return [];
@@ -70,23 +67,23 @@ async function fetchDreamCollegesForShortlist(args: { userId?: string }) {
     return {
       _id: c.id,
       dreamCollegeId: dream?.id || "",
-      name: c.name,
-      location: c.location || "",
-      state: c.state || "",
+      name: c.name ?? "",
+      location: c.location ?? "",
+      state: c.state ?? "",
       courses: c.courses ?? [],
       entranceExams: c.entrance_exams ?? [],
-      fees: c.fees || "—",
-      eligibility: c.eligibility || "—",
-      applicationDeadline: c.application_deadline || "—",
+      fees: c.fees ?? "—",
+      eligibility: c.eligibility ?? "—",
+      applicationDeadline: c.application_deadline ?? "—",
       scholarshipsAvailable: c.scholarships_available ?? [],
-      officialUrl: c.official_url || "",
-      isVerified: c.is_verified || false,
-      description: c.description || "",
-      ranking: c.ranking,
+      officialUrl: c.official_url ?? "",
+      isVerified: c.is_verified ?? false,
+      description: c.description ?? "",
+      ranking: c.ranking ?? null,
       course: c.courses?.[0] || "B.Tech CSE",
       status: "In Progress",
       statusColor: "bg-primary/15 text-primary",
-      match: 0, // computed at render time with profile data
+      match: 0,
     };
   });
 }
@@ -123,7 +120,12 @@ function ComparisonRow({ label, values }: { label: string; values: (React.ReactN
 
 export default function Shortlist() {
   const { user } = useAuth();
-  const dreamColleges = useQuery(fetchDreamCollegesForShortlist, { userId: user?._id });
+  const fetchVersionRef = useRef(0);
+  const [fetchVersion, setFetchVersion] = useState(0);
+  const dreamColleges = useQuery(fetchDreamCollegesForShortlist, {
+    userId: user?._id,
+    v: fetchVersion,
+  });
   const removeDream = useMutation(removeDreamCollege);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -138,7 +140,7 @@ export default function Shortlist() {
   const [showCompare, setShowCompare] = useState(false);
 
   const displayColleges = useMemo(() => {
-    const raw = dreamColleges && dreamColleges.length > 0 ? dreamColleges : DEMO_COLLEGES;
+    const raw = dreamColleges && dreamColleges.length > 0 ? dreamColleges : [];
     return raw.map((c) => ({
       ...c,
       match: calculateMatchScore(user?.studentProfile, {
@@ -146,7 +148,7 @@ export default function Shortlist() {
         courses: c.courses,
         state: c.state,
         location: c.location,
-        fees: typeof c.fees === 'string' ? c.fees : undefined,
+        fees: typeof c.fees === "string" ? c.fees : undefined,
         entranceExams: c.entranceExams,
         scholarshipsAvailable: c.scholarshipsAvailable,
         eligibility: c.eligibility,
@@ -181,14 +183,24 @@ export default function Shortlist() {
       try {
         await removeDream({ dreamCollegeId });
         toast.success("College removed from shortlist.");
-        window.location.reload();
+        // Force re-fetch instead of page reload
+        fetchVersionRef.current += 1;
+        setFetchVersion(fetchVersionRef.current);
+        // Also remove from selectedIds if it was selected for comparison
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          // Find which college ID corresponds to this dreamCollegeId
+          const college = displayColleges.find((c) => c.dreamCollegeId === dreamCollegeId);
+          if (college) next.delete(college._id);
+          return next;
+        });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to remove.");
       } finally {
         setRemovingId(null);
       }
     },
-    [removeDream]
+    [removeDream, displayColleges]
   );
 
   const toggleSelect = useCallback((collegeId: string) => {
@@ -257,7 +269,7 @@ export default function Shortlist() {
         <div className="space-y-3">
           {filtered.map((college, idx) => {
             const isSelected = selectedIds.has(college._id);
-            const canSelect = !!college._id; // demo colleges have empty _id
+            const canSelect = !!college._id;
             return (
               <motion.div
                 key={college._id || idx}
@@ -296,7 +308,7 @@ export default function Shortlist() {
                           </Badge>
                         </div>
                         <p className="mt-0.5 text-sm text-muted-foreground">
-                          {college.course} · {college.location}
+                          {college.course} · {college.location || "—"}
                           {college.state ? `, ${college.state}` : ""}
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-6 text-sm">
@@ -417,7 +429,7 @@ export default function Shortlist() {
                   </div>
                   <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
                     <MapPin className="size-3.5" />
-                    {detailCollege.location}
+                    {detailCollege.location || "—"}
                     {detailCollege.state ? `, ${detailCollege.state}` : ""}
                   </div>
                 </div>
@@ -563,7 +575,7 @@ export default function Shortlist() {
                       {selectedColleges.map((c) => (
                         <th key={c._id} className="py-3 px-3 text-left">
                           <p className="text-sm font-bold">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">{c.location}</p>
+                          <p className="text-xs text-muted-foreground">{c.location || "—"}</p>
                         </th>
                       ))}
                     </tr>
