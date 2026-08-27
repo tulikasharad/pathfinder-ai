@@ -33,7 +33,6 @@ import {
   eligibilityColor,
   deadlineUrgency,
   type ScholarshipProfile,
-  type MatchResult,
 } from "@/lib/scholarship-match";
 
 const states = [
@@ -114,6 +113,13 @@ async function toggleSchBookmark(args: { userId: string; itemType: string; itemI
     item_id: args.itemId,
   });
   return { bookmarked: true };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Open a URL safely in a new tab without navigating away from the app */
+function openExternalUrl(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -220,7 +226,6 @@ export default function ScholarshipNavigator() {
 
     if (sortBy === "match") {
       results.sort((a, b) => {
-        // Eligible first, then by match %
         const priority = { eligible: 0, likely_eligible: 1, insufficient_info: 2, not_eligible: 3 };
         const pa = priority[a.eligibility] ?? 2;
         const pb = priority[b.eligibility] ?? 2;
@@ -258,12 +263,20 @@ export default function ScholarshipNavigator() {
   );
 
   const handleApplyNow = useCallback((url: string | null) => {
-    if (url) {
-      window.open(url, "_blank", "noopener,noreferrer");
+    if (url && url.trim()) {
+      openExternalUrl(url);
     } else {
       toast.info("Official application link is currently unavailable.");
     }
   }, []);
+
+  /** Determine button label and action for a scholarship */
+  function getScholarshipButton(officialUrl: string | null): { label: string; hasUrl: boolean } {
+    if (officialUrl && officialUrl.trim()) {
+      return { label: "Apply Now", hasUrl: true };
+    }
+    return { label: "Official Link Unavailable", hasUrl: false };
+  }
 
   return (
     <div className="p-6 md:p-8">
@@ -514,6 +527,7 @@ export default function ScholarshipNavigator() {
             const s = result.scholarship;
             const urgency = deadlineUrgency(s.deadline);
             const isBookmarked = bookmarkedIds.has(s._id);
+            const btn = getScholarshipButton(s.officialUrl);
 
             return (
               <motion.div
@@ -629,15 +643,25 @@ export default function ScholarshipNavigator() {
                         >
                           Details
                         </Button>
-                        <Button
-                          size="sm"
-                          className="h-8 text-xs gap-1"
-                          onClick={() => handleApplyNow(s.officialUrl)}
-                          disabled={result.eligibility === "not_eligible"}
-                        >
-                          Apply Now
-                          {s.officialUrl && <ExternalLink className="size-3" />}
-                        </Button>
+                        {btn.hasUrl ? (
+                          <Button
+                            size="sm"
+                            className="h-8 text-xs gap-1"
+                            onClick={() => handleApplyNow(s.officialUrl)}
+                          >
+                            Apply Now
+                            <ExternalLink className="size-3" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground"
+                            disabled
+                          >
+                            Official Link Unavailable
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -726,6 +750,19 @@ export default function ScholarshipNavigator() {
                       <span className="text-muted-foreground">{selectedScholarship.description}</span>
                     </div>
                   )}
+                  {selectedScholarship.officialUrl && (
+                    <div>
+                      <span className="font-medium">Official Source: </span>
+                      <a
+                        href={selectedScholarship.officialUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        {selectedScholarship.officialUrl} <ExternalLink className="size-3" />
+                      </a>
+                    </div>
+                  )}
 
                   {/* Detailed eligibility breakdown */}
                   {selectedScholarship.matchResult?.criteriaDetails && (
@@ -761,18 +798,23 @@ export default function ScholarshipNavigator() {
                   >
                     Close
                   </Button>
-                  <Button
-                    className="flex-1 gap-1"
-                    onClick={() => handleApplyNow(selectedScholarship.officialUrl)}
-                    disabled={selectedScholarship.matchResult?.eligibility === "not_eligible"}
-                  >
-                    Apply Now
-                    {selectedScholarship.officialUrl && <ExternalLink className="size-3" />}
-                  </Button>
+                  {selectedScholarship.officialUrl ? (
+                    <Button
+                      className="flex-1 gap-1"
+                      onClick={() => handleApplyNow(selectedScholarship.officialUrl)}
+                    >
+                      Apply Now
+                      <ExternalLink className="size-3" />
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="flex-1" disabled>
+                      Official Link Unavailable
+                    </Button>
+                  )}
                 </div>
                 {!selectedScholarship.officialUrl && (
                   <p className="mt-3 text-center text-xs text-muted-foreground">
-                    Official application link currently unavailable.
+                    Official application link is currently unavailable.
                   </p>
                 )}
               </motion.div>
